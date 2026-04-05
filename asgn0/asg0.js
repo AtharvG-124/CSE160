@@ -59,6 +59,12 @@ function angleBetween(v1, v2) {
     return angleDeg;
 }
 
+function areaTriangle(v1, v2) {
+    var v3 = Vector3.cross(v1, v2);
+    var areaParallelogram = v3.magnitude();
+    return areaParallelogram / 2;
+}
+
 function handleDrawOperationEvent() {
     handleDrawEvent();
 
@@ -97,7 +103,8 @@ function handleDrawOperationEvent() {
         drawVector(v3.normalize(), "green");
         drawVector(v4.normalize(), "green");
     } else if (op === "angle") {
-        var angle = angleBetween(v1, v2);
-        console.log("Angle: " + angle.toFixed(2));
+        console.log("Angle: " + angleBetween(v1, v2).toFixed(2));
+    } else if (op === "area") {
+        console.log("Area of the triangle: " + areaTriangle(v1, v2).toFixed(2));
     }
 }
