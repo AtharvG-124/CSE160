@@ -42,6 +42,23 @@ function handleDrawEvent() {
     drawVector(v2, "blue");
 }
 
+function angleBetween(v1, v2) {
+    var dotProd = Vector3.dot(v1, v2);
+    var m1 = v1.magnitude();
+    var m2 = v2.magnitude();
+    
+    // Calculate cosine of alpha: cos(a) = (v1 . v2) / (||v1|| * ||v2||)
+    var cosAlpha = dotProd / (m1 * m2);
+    
+    // Clamp value to avoid NaN due to floating point errors
+    cosAlpha = Math.min(1, Math.max(-1, cosAlpha));
+    
+    var angleRad = Math.acos(cosAlpha);
+    var angleDeg = angleRad * (180 / Math.PI);
+    
+    return angleDeg;
+}
+
 function handleDrawOperationEvent() {
     handleDrawEvent();
 
@@ -54,7 +71,6 @@ function handleDrawOperationEvent() {
     var v2 = new Vector3([parseFloat(v2x), parseFloat(v2y), 0]);
 
     var op = document.getElementById('operation').value;
-    var s = parseFloat(document.getElementById('scalar').value);
 
     if (op === "add") {
         var v3 = new Vector3(v1.elements);
@@ -64,18 +80,12 @@ function handleDrawOperationEvent() {
         var v3 = new Vector3(v1.elements);
         v3.sub(v2);
         drawVector(v3, "green");
-    } else if (op === "mul") {
+    } else if (op === "mul" || op === "div") {
+        var s = parseFloat(document.getElementById('scalar').value);
         var v3 = new Vector3(v1.elements);
         var v4 = new Vector3(v2.elements);
-        v3.mul(s);
-        v4.mul(s);
-        drawVector(v3, "green");
-        drawVector(v4, "green");
-    } else if (op === "div") {
-        var v3 = new Vector3(v1.elements);
-        var v4 = new Vector3(v2.elements);
-        v3.div(s);
-        v4.div(s);
+        if (op === "mul") { v3.mul(s); v4.mul(s); }
+        else { v3.div(s); v4.div(s); }
         drawVector(v3, "green");
         drawVector(v4, "green");
     } else if (op === "magnitude") {
@@ -84,9 +94,10 @@ function handleDrawOperationEvent() {
     } else if (op === "normalize") {
         var v3 = new Vector3(v1.elements);
         var v4 = new Vector3(v2.elements);
-        v3.normalize();
-        v4.normalize();
-        drawVector(v3, "green");
-        drawVector(v4, "green");
+        drawVector(v3.normalize(), "green");
+        drawVector(v4.normalize(), "green");
+    } else if (op === "angle") {
+        var angle = angleBetween(v1, v2);
+        console.log("Angle: " + angle.toFixed(2));
     }
 }
