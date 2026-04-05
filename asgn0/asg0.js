@@ -17,12 +17,15 @@ function handleDrawEvent() {
     ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
     ctx.fillRect(0, 0, 400, 400);
 
-    var x = document.getElementById('v1X').value;
-    var y = document.getElementById('v1Y').value;
-
-    var v1 = new Vector3([parseFloat(x), parseFloat(y), 0]);
-
+    var v1x = document.getElementById('v1X').value;
+    var v1y = document.getElementById('v1Y').value;
+    var v1 = new Vector3([parseFloat(v1x), parseFloat(v1y), 0]);
     drawVector(v1, "red");
+
+    var v2x = document.getElementById('v2X').value;
+    var v2y = document.getElementById('v2Y').value;
+    var v2 = new Vector3([parseFloat(v2x), parseFloat(v2y), 0]);
+    drawVector(v2, "blue");
 }
 
 function drawVector(v, color) {
