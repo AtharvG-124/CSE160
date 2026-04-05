@@ -78,5 +78,15 @@ function handleDrawOperationEvent() {
         v4.div(s);
         drawVector(v3, "green");
         drawVector(v4, "green");
+    } else if (op === "magnitude") {
+        console.log("Magnitude v1: " + v1.magnitude());
+        console.log("Magnitude v2: " + v2.magnitude());
+    } else if (op === "normalize") {
+        var v3 = new Vector3(v1.elements);
+        var v4 = new Vector3(v2.elements);
+        v3.normalize();
+        v4.normalize();
+        drawVector(v3, "green");
+        drawVector(v4, "green");
     }
 }
