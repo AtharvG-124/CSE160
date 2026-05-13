@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voxel Realm</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;overflow:hidden;font-family:'Courier New',monospace;}
+canvas{display:block;cursor:none;}
+#hud{position:fixed;top:14px;left:14px;color:#0ff;font-size:12px;line-height:2;
+  text-shadow:0 0 8px #0ff;pointer-events:none;}
+#fps{position:fixed;top:14px;right:14px;color:#0f0;font-size:12px;
+  text-shadow:0 0 6px #0f0;pointer-events:none;}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:20px;height:20px;pointer-events:none;}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.8);}
+#crosshair::before{width:2px;height:100%;left:50%;top:0;transform:translateX(-50%);}
+#crosshair::after{height:2px;width:100%;top:50%;left:0;transform:translateY(-50%);}
+#story{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.85);border:1px solid #ff0;color:#ff0;
+  padding:12px 28px;font-size:13px;border-radius:4px;pointer-events:none;
+  max-width:520px;text-align:center;display:none;line-height:1.7;}
+#controls{position:fixed;bottom:14px;right:14px;color:rgba(255,255,255,.38);
+  font-size:11px;line-height:2.1;text-align:right;pointer-events:none;}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;color:#fff;z-index:100;}
+#overlay h1{font-size:3rem;letter-spacing:.35em;color:#0ff;
+  text-shadow:0 0 30px #0ff,0 0 60px #08f;margin-bottom:8px;}
+#overlay .sub{color:#777;margin-bottom:12px;font-size:13px;letter-spacing:.1em;}
+#overlay .intro{color:#bbb;max-width:500px;text-align:center;margin-bottom:36px;
+  font-size:13px;line-height:2;border:1px solid #222;padding:18px 24px;border-radius:6px;}
+#overlay button{background:transparent;border:2px solid #0ff;color:#0ff;
+  padding:13px 44px;font-size:15px;cursor:pointer;letter-spacing:.18em;
+  transition:all .2s;text-transform:uppercase;}
+#overlay button:hover{background:#0ff;color:#000;}
+#win{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;
+  align-items:center;justify-content:center;flex-direction:column;z-index:200;
+  color:#ff0;font-size:2.2rem;text-shadow:0 0 24px #ff0;}
+#win p{font-size:14px;color:#888;margin-top:18px;}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>VOXEL REALM</h1>
+  <div class="sub">— A WebGL Dungeon Adventure —</div>
+  <div class="intro">
+    An ancient fortress rises from the mist-shrouded hills.<br>
+    Dark magic has sealed its gates — only by gathering<br>
+    the <span style="color:#ff0;font-weight:bold">5 golden crystals</span> can you open the exit portal.<br><br>
+    <span style="color:#888;font-size:12px">Stone golems patrol the halls. They are harmless,<br>
+    but they guard the secrets of this forsaken place...</span>
+  </div>
+  <button id="start-btn">Enter the Fortress</button>
+</div>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="h-pos"></div>
+  <div id="h-cryst" style="color:#ff0"></div>
+  <div id="h-block"></div>
+  <div id="h-hint" style="color:#555;font-size:11px;margin-top:2px"></div>
+</div>
+<div id="fps"></div>
+<div id="crosshair"></div>
+<div id="story"></div>
+<div id="win"><div>🏆 YOU ESCAPED THE FORTRESS! 🏆</div><p>Refresh to play again.</p></div>
+<div id="controls">
+  WASD — move &nbsp;|&nbsp; Mouse — look<br>
+  Q / E — turn left / right<br>
+  F — place block &nbsp;|&nbsp; G — remove block<br>
+  Click canvas to lock mouse
+</div>
+
+<script>
+// =============================================================
+// cuon-matrix (inline, complete)
+// =============================================================
+function Matrix4(s){var i,a,d;if(s&&s.elements){a=s.elements;d=new Float32Array(16);for(i=0;i<16;i++)d[i]=a[i];this.elements=d;}else this.elements=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);}
+Matrix4.prototype.setIdentity=function(){var e=this.elements;e[0]=1;e[4]=0;e[8]=0;e[12]=0;e[1]=0;e[5]=1;e[9]=0;e[13]=0;e[2]=0;e[6]=0;e[10]=1;e[14]=0;e[3]=0;e[7]=0;e[11]=0;e[15]=1;return this;};
+Matrix4.prototype.set=function(s){var a=s.elements,d=this.elements;if(a!==d)for(var i=0;i<16;i++)d[i]=a[i];return this;};
+Matrix4.prototype.concat=function(o){var i,e=this.elements,a=this.elements,b=o.elements,ai0,ai1,ai2,ai3;if(e===b){b=new Float32Array(16);for(i=0;i<16;i++)b[i]=e[i];}for(i=0;i<4;i++){ai0=a[i];ai1=a[i+4];ai2=a[i+8];ai3=a[i+12];e[i]=ai0*b[0]+ai1*b[1]+ai2*b[2]+ai3*b[3];e[i+4]=ai0*b[4]+ai1*b[5]+ai2*b[6]+ai3*b[7];e[i+8]=ai0*b[8]+ai1*b[9]+ai2*b[10]+ai3*b[11];e[i+12]=ai0*b[12]+ai1*b[13]+ai2*b[14]+ai3*b[15];}return this;};
+Matrix4.prototype.multiply=Matrix4.prototype.concat;
+Matrix4.prototype.multiplyVector3=function(p){var e=this.elements,v=p.elements,r=new Vector3();var res=r.elements;res[0]=v[0]*e[0]+v[1]*e[4]+v[2]*e[8]+e[12];res[1]=v[0]*e[1]+v[1]*e[5]+v[2]*e[9]+e[13];res[2]=v[0]*e[2]+v[1]*e[6]+v[2]*e[10]+e[14];return r;};
+Matrix4.prototype.transpose=function(){var e=this.elements,t;t=e[1];e[1]=e[4];e[4]=t;t=e[2];e[2]=e[8];e[8]=t;t=e[3];e[3]=e[12];e[12]=t;t=e[6];e[6]=e[9];e[9]=t;t=e[7];e[7]=e[13];e[13]=t;t=e[11];e[11]=e[14];e[14]=t;return this;};
+Matrix4.prototype.setInverseOf=function(o){var i,s=o.elements,d=this.elements,inv=new Float32Array(16),det;inv[0]=s[5]*s[10]*s[15]-s[5]*s[11]*s[14]-s[9]*s[6]*s[15]+s[9]*s[7]*s[14]+s[13]*s[6]*s[11]-s[13]*s[7]*s[10];inv[4]=-s[4]*s[10]*s[15]+s[4]*s[11]*s[14]+s[8]*s[6]*s[15]-s[8]*s[7]*s[14]-s[12]*s[6]*s[11]+s[12]*s[7]*s[10];inv[8]=s[4]*s[9]*s[15]-s[4]*s[11]*s[13]-s[8]*s[5]*s[15]+s[8]*s[7]*s[13]+s[12]*s[5]*s[11]-s[12]*s[7]*s[9];inv[12]=-s[4]*s[9]*s[14]+s[4]*s[10]*s[13]+s[8]*s[5]*s[14]-s[8]*s[6]*s[13]-s[12]*s[5]*s[10]+s[12]*s[6]*s[9];inv[1]=-s[1]*s[10]*s[15]+s[1]*s[11]*s[14]+s[9]*s[2]*s[15]-s[9]*s[3]*s[14]-s[13]*s[2]*s[11]+s[13]*s[3]*s[10];inv[5]=s[0]*s[10]*s[15]-s[0]*s[11]*s[14]-s[8]*s[2]*s[15]+s[8]*s[3]*s[14]+s[12]*s[2]*s[11]-s[12]*s[3]*s[10];inv[9]=-s[0]*s[9]*s[15]+s[0]*s[11]*s[13]+s[8]*s[1]*s[15]-s[8]*s[3]*s[13]-s[12]*s[1]*s[11]+s[12]*s[3]*s[9];inv[13]=s[0]*s[9]*s[14]-s[0]*s[10]*s[13]-s[8]*s[1]*s[14]+s[8]*s[2]*s[13]+s[12]*s[1]*s[10]-s[12]*s[2]*s[9];inv[2]=s[1]*s[6]*s[15]-s[1]*s[7]*s[14]-s[5]*s[2]*s[15]+s[5]*s[3]*s[14]+s[13]*s[2]*s[7]-s[13]*s[3]*s[6];inv[6]=-s[0]*s[6]*s[15]+s[0]*s[7]*s[14]+s[4]*s[2]*s[15]-s[4]*s[3]*s[14]-s[12]*s[2]*s[7]+s[12]*s[3]*s[6];inv[10]=s[0]*s[5]*s[15]-s[0]*s[7]*s[13]-s[4]*s[1]*s[15]+s[4]*s[3]*s[13]+s[12]*s[1]*s[7]-s[12]*s[3]*s[5];inv[14]=-s[0]*s[5]*s[14]+s[0]*s[6]*s[13]+s[4]*s[1]*s[14]-s[4]*s[2]*s[13]-s[12]*s[1]*s[6]+s[12]*s[2]*s[5];inv[3]=-s[1]*s[6]*s[11]+s[1]*s[7]*s[10]+s[5]*s[2]*s[11]-s[5]*s[3]*s[10]-s[9]*s[2]*s[7]+s[9]*s[3]*s[6];inv[7]=s[0]*s[6]*s[11]-s[0]*s[7]*s[10]-s[4]*s[2]*s[11]+s[4]*s[3]*s[10]+s[8]*s[2]*s[7]-s[8]*s[3]*s[6];inv[11]=-s[0]*s[5]*s[11]+s[0]*s[7]*s[9]+s[4]*s[1]*s[11]-s[4]*s[3]*s[9]-s[8]*s[1]*s[7]+s[8]*s[3]*s[5];inv[15]=s[0]*s[5]*s[10]-s[0]*s[6]*s[9]-s[4]*s[1]*s[10]+s[4]*s[2]*s[9]+s[8]*s[1]*s[6]-s[8]*s[2]*s[5];det=s[0]*inv[0]+s[1]*inv[4]+s[2]*inv[8]+s[3]*inv[12];if(det===0)return this;det=1/det;for(i=0;i<16;i++)d[i]=inv[i]*det;return this;};
+Matrix4.prototype.invert=function(){return this.setInverseOf(this);};
+Matrix4.prototype.setPerspective=function(fovy,aspect,near,far){var e,rd,s,ct;rd=1/(far-near);s=Math.sin(fovy*Math.PI/360);if(!s)return;ct=Math.cos(fovy*Math.PI/360)/s;e=this.elements;e[0]=ct/aspect;e[4]=0;e[8]=0;e[12]=0;e[1]=0;e[5]=ct;e[9]=0;e[13]=0;e[2]=0;e[6]=0;e[10]=-(far+near)*rd;e[14]=-2*far*near*rd;e[3]=0;e[7]=0;e[11]=-1;e[15]=0;return this;};
+Matrix4.prototype.setScale=function(x,y,z){var e=this.elements;e[0]=x;e[4]=0;e[8]=0;e[12]=0;e[1]=0;e[5]=y;e[9]=0;e[13]=0;e[2]=0;e[6]=0;e[10]=z;e[14]=0;e[3]=0;e[7]=0;e[11]=0;e[15]=1;return this;};
+Matrix4.prototype.scale=function(x,y,z){return this.concat(new Matrix4().setScale(x,y,z));};
+Matrix4.prototype.setTranslate=function(x,y,z){var e=this.elements;e[0]=1;e[4]=0;e[8]=0;e[12]=x;e[1]=0;e[5]=1;e[9]=0;e[13]=y;e[2]=0;e[6]=0;e[10]=1;e[14]=z;e[3]=0;e[7]=0;e[11]=0;e[15]=1;return this;};
+Matrix4.prototype.translate=function(x,y,z){return this.concat(new Matrix4().setTranslate(x,y,z));};
+Matrix4.prototype.setRotate=function(angle,x,y,z){var e,s,c,len,rlen,nc,xy,yz,zx,xs,ys,zs;angle=Math.PI*angle/180;e=this.elements;s=Math.sin(angle);c=Math.cos(angle);if(x===1&&y===0&&z===0){e[0]=1;e[4]=0;e[8]=0;e[12]=0;e[1]=0;e[5]=c;e[9]=-s;e[13]=0;e[2]=0;e[6]=s;e[10]=c;e[14]=0;e[3]=0;e[7]=0;e[11]=0;e[15]=1;}else if(x===0&&y===1&&z===0){e[0]=c;e[4]=0;e[8]=s;e[12]=0;e[1]=0;e[5]=1;e[9]=0;e[13]=0;e[2]=-s;e[6]=0;e[10]=c;e[14]=0;e[3]=0;e[7]=0;e[11]=0;e[15]=1;}else if(x===0&&y===0&&z===1){e[0]=c;e[4]=-s;e[8]=0;e[12]=0;e[1]=s;e[5]=c;e[9]=0;e[13]=0;e[2]=0;e[6]=0;e[10]=1;e[14]=0;e[3]=0;e[7]=0;e[11]=0;e[15]=1;}else{len=Math.sqrt(x*x+y*y+z*z);if(len<.001){this.setIdentity();return this;}rlen=1/len;x*=rlen;y*=rlen;z*=rlen;nc=1-c;xy=x*y;yz=y*z;zx=z*x;xs=x*s;ys=y*s;zs=z*s;e[0]=x*x*nc+c;e[4]=xy*nc-zs;e[8]=zx*nc+ys;e[12]=0;e[1]=xy*nc+zs;e[5]=y*y*nc+c;e[9]=yz*nc-xs;e[13]=0;e[2]=zx*nc-ys;e[6]=yz*nc+xs;e[10]=z*z*nc+c;e[14]=0;e[3]=0;e[7]=0;e[11]=0;e[15]=1;}return this;};
+Matrix4.prototype.rotate=function(a,x,y,z){return this.concat(new Matrix4().setRotate(a,x,y,z));};
+Matrix4.prototype.setLookAt=function(ex,ey,ez,cx,cy,cz,ux,uy,uz){var e,fx,fy,fz,rl,sx,sy,sz,qx,qy,qz;fx=cx-ex;fy=cy-ey;fz=cz-ez;rl=1/Math.sqrt(fx*fx+fy*fy+fz*fz);fx*=rl;fy*=rl;fz*=rl;sx=fy*uz-fz*uy;sy=fz*ux-fx*uz;sz=fx*uy-fy*ux;rl=1/Math.sqrt(sx*sx+sy*sy+sz*sz);sx*=rl;sy*=rl;sz*=rl;qx=sy*fz-sz*fy;qy=sz*fx-sx*fz;qz=sx*fy-sy*fx;e=this.elements;e[0]=sx;e[4]=sy;e[8]=sz;e[12]=-(sx*ex+sy*ey+sz*ez);e[1]=qx;e[5]=qy;e[9]=qz;e[13]=-(qx*ex+qy*ey+qz*ez);e[2]=-fx;e[6]=-fy;e[10]=-fz;e[14]=fx*ex+fy*ey+fz*ez;e[3]=0;e[7]=0;e[11]=0;e[15]=1;return this;};
+function Vector3(s){var v=new Float32Array(3);if(s&&s.elements){v[0]=s.elements[0];v[1]=s.elements[1];v[2]=s.elements[2];}this.elements=v;}
+Vector3.prototype.normalize=function(){var v=this.elements,x=v[0],y=v[1],z=v[2],g=Math.sqrt(x*x+y*y+z*z);if(g&&g!==1){g=1/g;v[0]*=g;v[1]*=g;v[2]*=g;}return this;};
+Vector3.prototype.set=function(s){var e=s.elements;this.elements[0]=e[0];this.elements[1]=e[1];this.elements[2]=e[2];return this;};
+Vector3.prototype.add=function(o){var e=this.elements,s=o.elements;e[0]+=s[0];e[1]+=s[1];e[2]+=s[2];return this;};
+Vector3.prototype.sub=function(o){var e=this.elements,s=o.elements;e[0]-=s[0];e[1]-=s[1];e[2]-=s[2];return this;};
+Vector3.prototype.mul=function(n){this.elements[0]*=n;this.elements[1]*=n;this.elements[2]*=n;return this;};
+Vector3.prototype.cross=function(o){var a=this.elements,b=o.elements,ax=a[0],ay=a[1],az=a[2];a[0]=ay*b[2]-az*b[1];a[1]=az*b[0]-ax*b[2];a[2]=ax*b[1]-ay*b[0];return this;};
+
+// =============================================================
+// SHADERS  — fog + batched geometry
+// =============================================================
+const VS=`
+attribute vec4 a_Pos;
+attribute vec2 a_UV;
+attribute vec3 a_Nrm;
+attribute vec4 a_Col;      /* per-vertex tint (for batched colored cubes) */
+uniform mat4 u_Model,u_View,u_Proj,u_NM;
+varying vec2 v_UV;
+varying float v_Diff;
+varying float v_Fog;
+varying vec4 v_Col;
+void main(){
+  vec4 worldPos = u_Model * a_Pos;
+  vec4 viewPos  = u_View * worldPos;
+  gl_Position   = u_Proj * viewPos;
+  /* diffuse lighting */
+  vec3 ld = normalize(vec3(1.2,2.5,0.8));
+  vec3 n  = normalize(vec3(u_NM * vec4(a_Nrm,0.0)));
+  v_Diff  = max(dot(n,ld),0.0)*0.55+0.45;
+  /* exponential fog based on view-space depth */
+  float dist = length(viewPos.xyz);
+  v_Fog  = 1.0 - exp(-dist * 0.022);
+  v_UV   = a_UV;
+  v_Col  = a_Col;
+}`;
+
+const FS=`
+precision mediump float;
+varying vec2 v_UV;
+varying float v_Diff;
+varying float v_Fog;
+varying vec4 v_Col;
+uniform sampler2D u_S0,u_S1,u_S2,u_S3;
+uniform int   u_TIdx;   /* which texture */
+uniform float u_TW;     /* 0=base color only, 1=texture only */
+uniform float u_Alpha;
+uniform vec4  u_Base;
+uniform vec3  u_FogColor;
+void main(){
+  vec4 tc;
+  if(u_TIdx==0)      tc=texture2D(u_S0,v_UV);
+  else if(u_TIdx==1) tc=texture2D(u_S1,v_UV);
+  else if(u_TIdx==2) tc=texture2D(u_S2,v_UV);
+  else               tc=texture2D(u_S3,v_UV);
+  vec4 base = mix(u_Base, tc, u_TW) * v_Col;
+  vec3 lit  = base.rgb * v_Diff;
+  vec3 col  = mix(lit, u_FogColor, clamp(v_Fog,0.0,1.0));
+  gl_FragColor = vec4(col, base.a * u_Alpha);
+}`;
+
+// =============================================================
+// WORLD MAP  32x32  (0=empty, 1-4=wall height)
+// =============================================================
+const RAW_MAP=[
+  [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,2,2,2,0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0,0,0,2,2,2,0,0,0,4],
+  [4,0,0,0,2,0,0,0,0,0,0,0,3,0,0,0,3,0,0,0,0,0,0,0,0,2,0,2,0,0,0,4],
+  [4,0,0,0,2,0,0,0,0,0,0,0,3,0,0,0,3,0,0,0,0,0,0,0,0,0,0,2,0,0,0,4],
+  [4,0,0,0,2,2,0,0,0,0,0,0,3,0,0,0,3,0,0,0,1,1,1,1,0,0,0,2,0,0,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,3,0,0,0,1,0,0,1,0,0,0,2,0,0,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,3,3,0,3,3,0,0,0,1,0,0,1,0,0,0,2,0,0,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,2,2,2,0,0,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,0,0,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,0,0,2,0,0,2,0,0,0,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,0,0,2,2,0,2,0,0,0,3,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,3,3,3,0,0,0,0,0,0,3,0,0,0,0,0,3,0,0,4,4,0,0,0,0,0,4],
+  [4,0,0,0,0,0,3,0,3,0,0,0,0,0,0,3,3,3,3,3,3,3,0,0,4,4,0,0,0,0,0,4],
+  [4,0,0,0,0,0,3,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,4],
+  [4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0,4],
+  [4,0,0,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0,4],
+  [4,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0,4],
+  [4,0,0,0,0,0,4,0,0,0,0,0,2,2,0,0,0,0,0,2,2,2,0,2,2,2,0,0,0,0,0,4],
+  [4,0,0,0,0,0,4,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,4,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
+  [4,0,0,0,0,0,4,4,4,4,0,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,2,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,2,0,4],
+  [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,4],
+  [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+];
+
+// Crystal positions [z, x]
+const CRYSTALS=[[7,14],[3,21],[13,18],[25,5],[17,21]];
+// Torch positions [x, z]  (decorative — for wow factor)
+const TORCHES=[[5,2],[12,2],[2,12],[28,5],[28,15],[5,28],[15,28],[28,28]];
+
+// =============================================================
+// TERRAIN  — noise heightmap, 34x34 grid vertices
+// =============================================================
+function hash2(x,y){return((Math.sin(x*127.1+y*311.7)*43758.5453)%1+1)%1;}
+function smoothNoise(x,y){
+  const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+  const a=hash2(ix,iy),b=hash2(ix+1,iy),c=hash2(ix,iy+1),d=hash2(ix+1,iy+1);
+  const ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
+  return a+(b-a)*ux+(c-a)*uy+(a-b-c+d)*ux*uy;
+}
+function terrainH(wx,wz){
+  // gentle rolling hills, 0..0 inside fortress walls (flat near 0)
+  const n1=smoothNoise(wx*.08,wz*.08)*1.2;
+  const n2=smoothNoise(wx*.22,wz*.22)*.4;
+  const h=n1+n2;
+  // suppress terrain inside map (it's a fortress floor)
+  const bx=Math.max(0,Math.min(1,(wx-1)/30));
+  const bz=Math.max(0,Math.min(1,(wz-1)/30));
+  const edge=Math.min(bx,1-bx,bz,1-bz)*8;
+  const suppress=Math.max(0,1-edge);
+  return h*(1-suppress*0.9);
+}
+
+function buildTerrainMesh(){
+  // 34x34 grid of quads for ground
+  const N=34,verts=[];
+  function h(x,z){return terrainH(x-1,z-1);}
+  for(let z=0;z<N-1;z++){
+    for(let x=0;x<N-1;x++){
+      const x0=x-1,z0=z-1,x1=x,z1=z;
+      const y00=h(x0,z0),y10=h(x1,z0),y01=h(x0,z1),y11=h(x1,z1);
+      const u0=x/N,v0=z/N,u1=(x+1)/N,v1=(z+1)/N;
+      // compute normal via cross product
+      function normal(ax,ay,az,bx,by,bz){
+        return[ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx];
+      }
+      const n=normal(x1-x0,y10-y00,0, 0,y01-y00,z1-z0);
+      const nl=Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2])||1;
+      const nx=n[0]/nl,ny=n[1]/nl,nz=n[2]/nl;
+      // tri 1
+      verts.push(x0,y00,z0,u0*4,v0*4,nx,ny,nz,1,1,1,1);
+      verts.push(x1,y10,z0,u1*4,v0*4,nx,ny,nz,1,1,1,1);
+      verts.push(x1,y11,z1,u1*4,v1*4,nx,ny,nz,1,1,1,1);
+      // tri 2
+      verts.push(x0,y00,z0,u0*4,v0*4,nx,ny,nz,1,1,1,1);
+      verts.push(x1,y11,z1,u1*4,v1*4,nx,ny,nz,1,1,1,1);
+      verts.push(x0,y01,z1,u0*4,v1*4,nx,ny,nz,1,1,1,1);
+    }
+  }
+  return new Float32Array(verts);
+}
+
+// =============================================================
+// CUBE GEOMETRY helper — writes one cube (36 verts*12 floats)
+// into a Float32Array at given offset.
+// Layout: x,y,z, u,v, nx,ny,nz, r,g,b,a   (12 floats/vert)
+// =============================================================
+const FLOATS_PER_VERT=12;
+const VERTS_PER_CUBE=36;
+const FLOATS_PER_CUBE=FLOATS_PER_VERT*VERTS_PER_CUBE;
+
+// pre-build unit cube face data  [pos, uv, normal]
+const CUBE_FACES=(()=>{
+  const F=[];
+  function face(p0,p1,p2,p3,n){
+    // 2 tris
+    F.push([...p0,0,0,...n],[...p1,1,0,...n],[...p2,1,1,...n]);
+    F.push([...p0,0,0,...n],[...p2,1,1,...n],[...p3,0,1,...n]);
+  }
+  face([.5,-.5,-.5],[.5,.5,-.5],[.5,.5,.5],[.5,-.5,.5],[1,0,0]);
+  face([-.5,-.5,.5],[-.5,.5,.5],[-.5,.5,-.5],[-.5,-.5,-.5],[-1,0,0]);
+  face([-.5,.5,.5],[.5,.5,.5],[.5,.5,-.5],[-.5,.5,-.5],[0,1,0]);
+  face([-.5,-.5,-.5],[.5,-.5,-.5],[.5,-.5,.5],[-.5,-.5,.5],[0,-1,0]);
+  face([-.5,-.5,.5],[.5,-.5,.5],[.5,.5,.5],[-.5,.5,.5],[0,0,1]);
+  face([.5,-.5,-.5],[-.5,-.5,-.5],[-.5,.5,-.5],[.5,.5,-.5],[0,0,-1]);
+  return F;
+})();
+
+function writeCube(buf,off,tx,ty,tz,sx,sy,sz,r,g,b,a){
+  for(let i=0;i<36;i++){
+    const f=CUBE_FACES[i];
+    buf[off++]=f[0]*sx+tx;
+    buf[off++]=f[1]*sy+ty;
+    buf[off++]=f[2]*sz+tz;
+    buf[off++]=f[3];buf[off++]=f[4]; // uv
+    buf[off++]=f[5];buf[off++]=f[6];buf[off++]=f[7]; // normal
+    buf[off++]=r;buf[off++]=g;buf[off++]=b;buf[off++]=a;
+  }
+  return off;
+}
+
+// =============================================================
+// PROCEDURAL TEXTURES
+// =============================================================
+function makeTex(gl,sz,fn){
+  const d=new Uint8Array(sz*sz*4);
+  for(let y=0;y<sz;y++)for(let x=0;x<sz;x++)fn(x,y,sz,d,(y*sz+x)*4);
+  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,sz,sz,0,gl.RGBA,gl.UNSIGNED_BYTE,d);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);return t;
+}
+function makeStoneTex(gl){return makeTex(gl,256,(x,y,s,d,i)=>{
+  const bw=40,bh=20,row=Math.floor(y/bh),off=row%2===1?bw/2:0;
+  const ox=(x+off)%bw,oy=y%bh;
+  const g=ox<2||oy<2?1:0;
+  const n=smoothNoise(x*.18,y*.18)*.3+smoothNoise(x*.45,y*.45)*.1;
+  const v=g?.26:(.5+n);
+  d[i]=v*180|0;d[i+1]=v*165|0;d[i+2]=v*152|0;d[i+3]=255;
+});}
+function makeGrassTex(gl){return makeTex(gl,256,(x,y,s,d,i)=>{
+  const n=smoothNoise(x*.28,y*.28),n2=smoothNoise(x*.06,y*.06)*.5;
+  const v=(0.28+n*.32+n2);
+  d[i]=v*60|0;d[i+1]=Math.min(255,v*200|0);d[i+2]=v*40|0;d[i+3]=255;
+});}
+function makeDarkTex(gl){return makeTex(gl,256,(x,y,s,d,i)=>{
+  const ox=x%36,oy=y%26;const g=ox<2||oy<2?1:0;
+  const n=smoothNoise(x*.2,y*.2)*.22;
+  const v=g?.11:(.26+n);
+  d[i]=v*105|0;d[i+1]=v*95|0;d[i+2]=v*120|0;d[i+3]=255;
+});}
+function makeGoldTex(gl){return makeTex(gl,64,(x,y,s,d,i)=>{
+  const n=smoothNoise(x*.5,y*.5)*.35+smoothNoise(x*.12,y*.12)*.45;
+  const v=.6+n*.4;
+  d[i]=Math.min(255,v*255|0);d[i+1]=Math.min(255,v*210|0);d[i+2]=15;d[i+3]=255;
+});}
+
+// =============================================================
+// CAMERA
+// =============================================================
+class Camera{
+  constructor(cv){
+    this.canvas=cv;this.fov=68;
+    this.eye=new Vector3();this.eye.elements[0]=2;this.eye.elements[1]=1.7;this.eye.elements[2]=2;
+    this.at =new Vector3();this.at.elements[0]=3; this.at.elements[1]=1.7;this.at.elements[2]=2;
+    this.up =new Vector3();this.up.elements[1]=1;
+    this.viewMat=new Matrix4();this.projMat=new Matrix4();
+    // pre-allocated scratch vectors — ZERO allocations during movement
+    this._f=new Vector3();this._s=new Vector3();this._rm=new Matrix4();this._tmp=new Vector3();
+    this.updateView();this.updateProj();
+  }
+  updateView(){const e=this.eye.elements,a=this.at.elements,u=this.up.elements;this.viewMat.setLookAt(e[0],e[1],e[2],a[0],a[1],a[2],u[0],u[1],u[2]);}
+  updateProj(){this.projMat.setPerspective(this.fov,this.canvas.width/this.canvas.height,.1,600);}
+  _fwd(){const f=this._f,e=this.eye.elements,a=this.at.elements;f.elements[0]=a[0]-e[0];f.elements[1]=a[1]-e[1];f.elements[2]=a[2]-e[2];f.normalize();return f;}
+  moveForward(s){const f=this._fwd();const fe=f.elements;const speed=s||.1;this.eye.elements[0]+=fe[0]*speed;this.eye.elements[2]+=fe[2]*speed;this.at.elements[0]+=fe[0]*speed;this.at.elements[2]+=fe[2]*speed;this.updateView();}
+  moveBack(s){this.moveForward(-(s||.1));}
+  moveLeft(s){
+    const f=this._fwd(),u=this.up,side=this._s;
+    side.elements[0]=u.elements[0];side.elements[1]=u.elements[1];side.elements[2]=u.elements[2];
+    side.cross(f);side.normalize();const se=side.elements,sp=s||.1;
+    this.eye.elements[0]+=se[0]*sp;this.eye.elements[2]+=se[2]*sp;
+    this.at.elements[0]+=se[0]*sp;this.at.elements[2]+=se[2]*sp;this.updateView();
+  }
+  moveRight(s){this.moveLeft(-(s||.1));}
+  panLeft(deg){
+    const f=this._f,e=this.eye.elements,a=this.at.elements,u=this.up.elements;
+    f.elements[0]=a[0]-e[0];f.elements[1]=a[1]-e[1];f.elements[2]=a[2]-e[2];
+    this._rm.setRotate(deg,u[0],u[1],u[2]);
+    const fp=this._rm.multiplyVector3(f);const fpe=fp.elements;
+    a[0]=e[0]+fpe[0];a[1]=e[1]+fpe[1];a[2]=e[2]+fpe[2];this.updateView();
+  }
+  panRight(deg){this.panLeft(-deg);}
+  mouseLook(dx,dy){
+    this.panLeft(dx*.14);
+    // vertical pan
+    const f=this._f,e=this.eye.elements,a=this.at.elements,u=this.up;
+    f.elements[0]=a[0]-e[0];f.elements[1]=a[1]-e[1];f.elements[2]=a[2]-e[2];
+    const side=this._s;side.elements[0]=f.elements[0];side.elements[1]=f.elements[1];side.elements[2]=f.elements[2];side.cross(u);side.normalize();
+    this._rm.setRotate(dy*.14,side.elements[0],side.elements[1],side.elements[2]);
+    const fp=this._rm.multiplyVector3(f);const fpe=fp.elements;
+    const dot=fpe[1]/Math.sqrt(fpe[0]*fpe[0]+fpe[1]*fpe[1]+fpe[2]*fpe[2]);
+    if(Math.abs(dot)<.93){a[0]=e[0]+fpe[0];a[1]=e[1]+fpe[1];a[2]=e[2]+fpe[2];}
+    this.updateView();
+  }
+}
+
+// =============================================================
+// ANIMAL  (wanders using map)
+// =============================================================
+class Animal{
+  constructor(x,z,col){
+    this.x=x;this.z=z;this.angle=Math.random()*360;
+    this.moving=true;this.timer=0;this.wait=80+Math.random()*100;
+    this.bobT=Math.random()*6.28;this.col=col;
+  }
+  update(map){
+    this.timer++;this.bobT+=.08;
+    if(this.timer>this.wait){this.moving=!this.moving;this.timer=0;this.wait=80+Math.random()*100;if(!this.moving)this.angle+=(Math.random()-.5)*140;}
+    if(this.moving){
+      const rad=this.angle*Math.PI/180,spd=.018;
+      const nx=this.x+Math.cos(rad)*spd,nz=this.z+Math.sin(rad)*spd;
+      const mx=Math.round(nx),mz=Math.round(nz);
+      if(mx>=0&&mx<32&&mz>=0&&mz<32&&map[mz][mx]===0){this.x=nx;this.z=nz;}
+      else this.angle+=(80+Math.random()*100)*(Math.random()<.5?1:-1);
+    }
+  }
+}
+
+// =============================================================
+// MAIN APPLICATION
+// =============================================================
+class App{
+  constructor(){
+    this.canvas=document.getElementById('c');
+    this.canvas.width=window.innerWidth;this.canvas.height=window.innerHeight;
+    const gl=this.canvas.getContext('webgl')||this.canvas.getContext('experimental-webgl');
+    if(!gl){alert('WebGL not supported');return;}
+    this.gl=gl;
+
+    this.initGL();
+    this.initTextures();
+
+    // pre-allocate ONE large dynamic vertex buffer for batched walls
+    // max: 32*32*4 cubes * 36 verts * 12 floats = 17,694,720 floats worst case
+    // realistic max ~2000 cubes = 864,000 floats
+    this.MAX_CUBES=4096;
+    this.dynBuf=new Float32Array(this.MAX_CUBES*VERTS_PER_CUBE*FLOATS_PER_VERT);
+    this.dynVBO=gl.createBuffer();
+
+    // terrain
+    this.terrainData=buildTerrainMesh();
+    this.terrainVBO=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.terrainVBO);
+    gl.bufferData(gl.ARRAY_BUFFER,this.terrainData,gl.STATIC_DRAW);
+    this.terrainVertCount=this.terrainData.length/FLOATS_PER_VERT;
+
+    // pre-alloc matrices (zero per-frame allocations)
+    this._M  =new Matrix4();
+    this._NM =new Matrix4();
+    this._ID =new Matrix4(); // identity stays identity
+
+    this.cam=new Camera(this.canvas);
+    this.keys={};this.locked=false;
+    this.mapData=RAW_MAP.map(r=>[...r]);
+    this.crystalSet=new Set(CRYSTALS.map((_,i)=>i));
+    this.collected=0;this.won=false;this.winShown=false;
+
+    this.animals=[
+      new Animal(4,4,[.72,.42,.16]),new Animal(10,10,[.35,.62,.22]),
+      new Animal(20,14,[.62,.32,.55]),new Animal(8,26,[.28,.52,.72]),
+      new Animal(27,27,[.82,.52,.12]),
+    ];
+
+    // FPS tracking
+    this.fpsFrames=0;this.fpsLast=performance.now();this.fpsVal=0;
+
+    this.setupEvents();
+    this.showStory('Find the 5 golden crystals hidden in the fortress ruins!');
+    requestAnimationFrame(t=>this.loop(t));
+  }
+
+  // -------------------------------------------------------
+  initGL(){
+    const gl=this.gl;
+    const mk=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(type,gl.getShaderInfoLog(s));return s;};
+    this.prog=gl.createProgram();
+    gl.attachShader(this.prog,mk(gl.VERTEX_SHADER,VS));
+    gl.attachShader(this.prog,mk(gl.FRAGMENT_SHADER,FS));
+    gl.linkProgram(this.prog);gl.useProgram(this.prog);
+    const p=this.prog;
+    this.aPos=gl.getAttribLocation(p,'a_Pos');
+    this.aUV =gl.getAttribLocation(p,'a_UV');
+    this.aNrm=gl.getAttribLocation(p,'a_Nrm');
+    this.aCol=gl.getAttribLocation(p,'a_Col');
+    this.uModel=gl.getUniformLocation(p,'u_Model');
+    this.uView =gl.getUniformLocation(p,'u_View');
+    this.uProj =gl.getUniformLocation(p,'u_Proj');
+    this.uNM   =gl.getUniformLocation(p,'u_NM');
+    this.uS0=gl.getUniformLocation(p,'u_S0');this.uS1=gl.getUniformLocation(p,'u_S1');
+    this.uS2=gl.getUniformLocation(p,'u_S2');this.uS3=gl.getUniformLocation(p,'u_S3');
+    this.uTIdx=gl.getUniformLocation(p,'u_TIdx');
+    this.uTW  =gl.getUniformLocation(p,'u_TW');
+    this.uBase=gl.getUniformLocation(p,'u_Base');
+    this.uAlpha=gl.getUniformLocation(p,'u_Alpha');
+    this.uFog =gl.getUniformLocation(p,'u_FogColor');
+    gl.uniform1i(this.uS0,0);gl.uniform1i(this.uS1,1);gl.uniform1i(this.uS2,2);gl.uniform1i(this.uS3,3);
+    gl.uniform3f(this.uFog,.52,.62,.75); // fog color matches sky
+    gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);
+    gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(.52,.62,.75,1);
+  }
+
+  initTextures(){
+    const gl=this.gl;
+    const t0=makeStoneTex(gl),t1=makeGrassTex(gl),t2=makeDarkTex(gl),t3=makeGoldTex(gl);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,t0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,t1);
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,t2);
+    gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,t3);
+  }
+
+  // -------------------------------------------------------
+  // Bind the dynamic VBO and set attrib pointers
+  // Layout: x,y,z(3), u,v(2), nx,ny,nz(3), r,g,b,a(4) = 12 floats
+  bindDynVBO(){
+    const gl=this.gl,bpe=4,stride=12*bpe;
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.dynVBO);
+    gl.vertexAttribPointer(this.aPos,3,gl.FLOAT,false,stride,0);gl.enableVertexAttribArray(this.aPos);
+    gl.vertexAttribPointer(this.aUV, 2,gl.FLOAT,false,stride,3*bpe);gl.enableVertexAttribArray(this.aUV);
+    gl.vertexAttribPointer(this.aNrm,3,gl.FLOAT,false,stride,5*bpe);gl.enableVertexAttribArray(this.aNrm);
+    gl.vertexAttribPointer(this.aCol,4,gl.FLOAT,false,stride,8*bpe);gl.enableVertexAttribArray(this.aCol);
+  }
+
+  bindTerrainVBO(){
+    const gl=this.gl,bpe=4,stride=12*bpe;
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.terrainVBO);
+    gl.vertexAttribPointer(this.aPos,3,gl.FLOAT,false,stride,0);gl.enableVertexAttribArray(this.aPos);
+    gl.vertexAttribPointer(this.aUV, 2,gl.FLOAT,false,stride,3*bpe);gl.enableVertexAttribArray(this.aUV);
+    gl.vertexAttribPointer(this.aNrm,3,gl.FLOAT,false,stride,5*bpe);gl.enableVertexAttribArray(this.aNrm);
+    gl.vertexAttribPointer(this.aCol,4,gl.FLOAT,false,stride,8*bpe);gl.enableVertexAttribArray(this.aCol);
+  }
+
+  // -------------------------------------------------------
+  // Draw a single cube using identity model matrix (pre-transformed verts in dynBuf)
+  // OR draw with a given model matrix using dynBuf as scratch
+  drawCubeDirect(tx,ty,tz,sx,sy,sz,r,g,b,a,texIdx,texW,base){
+    const gl=this.gl,buf=this.dynBuf;
+    writeCube(buf,0,tx,ty,tz,sx,sy,sz,r,g,b,a);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.dynVBO);
+    gl.bufferData(gl.ARRAY_BUFFER,buf.subarray(0,VERTS_PER_CUBE*12),gl.DYNAMIC_DRAW);
+    this.bindDynVBO();
+    this._ID.setIdentity();
+    gl.uniformMatrix4fv(this.uModel,false,this._ID.elements);
+    gl.uniformMatrix4fv(this.uNM,false,this._ID.elements);
+    gl.uniform1i(this.uTIdx,texIdx||0);gl.uniform1f(this.uTW,texW!=null?texW:1);
+    gl.uniform4fv(this.uBase,base||[1,1,1,1]);gl.uniform1f(this.uAlpha,1);
+    gl.drawArrays(gl.TRIANGLES,0,VERTS_PER_CUBE);
+  }
+
+  // -------------------------------------------------------
+  // BATCHED wall draw — builds one big vertex array, ONE drawArrays call
+  drawAllWalls(){
+    const gl=this.gl,map=this.mapData,buf=this.dynBuf;
+    let off=0;
+    for(let z=0;z<32;z++){
+      for(let x=0;x<32;x++){
+        const h=map[z][x];if(!h)continue;
+        for(let y=0;y<h;y++){
+          const ti=h>=3?2:0; // dark stone for tall walls
+          // tint: slightly vary per height for visual depth
+          const bright=.9+y*.04;
+          off=writeCube(buf,off,x,y+.5,z,1,1,1,bright,bright,bright,1);
+        }
+      }
+    }
+    if(off===0)return;
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.dynVBO);
+    gl.bufferData(gl.ARRAY_BUFFER,buf.subarray(0,off),gl.DYNAMIC_DRAW);
+    this.bindDynVBO();
+    this._ID.setIdentity();
+    gl.uniformMatrix4fv(this.uModel,false,this._ID.elements);
+    gl.uniformMatrix4fv(this.uNM,false,this._ID.elements);
+    // Draw stone (h<3) and dark stone (h>=3) with same call,
+    // we'll use texture idx 0 (stone) for now since batching means one draw.
+    // For mixed textures in a batch we'd need separate passes.
+    // We do TWO passes: short walls (h<3) and tall walls (h>=3).
+    // --- Build separate buffers ---
+    let off0=0,off2=0;
+    const buf0=new Float32Array(buf.length),buf2=new Float32Array(buf.length);
+    for(let z=0;z<32;z++){
+      for(let x=0;x<32;x++){
+        const h=map[z][x];if(!h)continue;
+        for(let y=0;y<h;y++){
+          const bright=.88+y*.05;
+          if(h<3) off0=writeCube(buf0,off0,x,y+.5,z,1,1,1,bright,bright,bright,1);
+          else    off2=writeCube(buf2,off2,x,y+.5,z,1,1,1,bright,bright,bright,1);
+        }
+      }
+    }
+    // Draw stone walls batch
+    if(off0>0){
+      gl.bufferData(gl.ARRAY_BUFFER,buf0.subarray(0,off0),gl.DYNAMIC_DRAW);
+      this.bindDynVBO();
+      gl.uniformMatrix4fv(this.uModel,false,this._ID.elements);
+      gl.uniformMatrix4fv(this.uNM,false,this._ID.elements);
+      gl.uniform1i(this.uTIdx,0);gl.uniform1f(this.uTW,1);
+      gl.uniform4fv(this.uBase,[1,1,1,1]);gl.uniform1f(this.uAlpha,1);
+      gl.drawArrays(gl.TRIANGLES,0,off0/12);
+    }
+    // Draw dark stone walls batch
+    if(off2>0){
+      gl.bufferData(gl.ARRAY_BUFFER,buf2.subarray(0,off2),gl.DYNAMIC_DRAW);
+      this.bindDynVBO();
+      gl.uniformMatrix4fv(this.uModel,false,this._ID.elements);
+      gl.uniformMatrix4fv(this.uNM,false,this._ID.elements);
+      gl.uniform1i(this.uTIdx,2);gl.uniform1f(this.uTW,1);
+      gl.uniform4fv(this.uBase,[1,1,1,1]);gl.uniform1f(this.uAlpha,1);
+      gl.drawArrays(gl.TRIANGLES,0,off2/12);
+    }
+  }
+
+  // -------------------------------------------------------
+  render(t){
+    const gl=this.gl,M=this._M,NM=this._NM,ID=this._ID;
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.uniformMatrix4fv(this.uView,false,this.cam.viewMat.elements);
+    gl.uniformMatrix4fv(this.uProj,false,this.cam.projMat.elements);
+
+    // --- SKY BOX (solid color, no texture) ---
+    this.drawCubeDirect(16,0,16,500,500,500,1,1,1,1,0,0,[.38,.58,1,1]);
+
+    // --- TERRAIN ---
+    this.bindTerrainVBO();
+    ID.setIdentity();
+    gl.uniformMatrix4fv(this.uModel,false,ID.elements);
+    gl.uniformMatrix4fv(this.uNM,false,ID.elements);
+    gl.uniform1i(this.uTIdx,1);gl.uniform1f(this.uTW,1);
+    gl.uniform4fv(this.uBase,[1,1,1,1]);gl.uniform1f(this.uAlpha,1);
+    gl.drawArrays(gl.TRIANGLES,0,this.terrainVertCount);
+
+    // --- WALLS (batched, 2 draw calls total) ---
+    this.drawAllWalls();
+
+    // --- CRYSTALS (individual, animated) ---
+    const ct=t*.001;
+    CRYSTALS.forEach(([cz,cx],idx)=>{
+      if(!this.crystalSet.has(idx))return;
+      const bob=Math.sin(ct*2+idx)*.2;
+      this.drawCubeDirect(cx,1.4+bob,cz,.3,.3,.3,1,1,1,1,3,1,null);
+      // glow ring around crystal
+      this.drawCubeDirect(cx,1.3+bob,cz,.55,.04,.55,1,1,1,.6,3,1,null);
+    });
+
+    // --- TORCHES ---
+    TORCHES.forEach(([tx,tz])=>{
+      // torch stick
+      this.drawCubeDirect(tx,.7,tz,.1,.6,.1,1,1,1,1,0,0,[.5,.3,.1,1]);
+      // flame (flickering gold)
+      const flicker=.85+Math.sin(ct*13+tx)*.15;
+      this.drawCubeDirect(tx,1.15+Math.sin(ct*8+tz)*.05,tz,.18,.22,.18,1,1,1,.9,3,flicker*.5,[1,.6,0,1]);
+    });
+
+    // --- ANIMALS ---
+    this.animals.forEach(a=>{
+      const bob=Math.sin(a.bobT)*.05,c=a.col;
+      const rad=a.angle*Math.PI/180,cr=Math.cos(rad),sr=Math.sin(rad);
+      // body
+      this.drawCubeDirect(a.x,.46+bob,a.z,.48,.32,.68,c[0],c[1],c[2],1,0,0,[c[0],c[1],c[2],1]);
+      // head
+      this.drawCubeDirect(a.x+cr*.4,.66+bob,a.z+sr*.4,.28,.26,.26,
+        Math.min(1,c[0]*1.2),Math.min(1,c[1]*1.2),Math.min(1,c[2]*1.2),1,0,0,
+        [Math.min(1,c[0]*1.2),Math.min(1,c[1]*1.2),Math.min(1,c[2]*1.2),1]);
+      // ears
+      this.drawCubeDirect(a.x+cr*.4+sr*.09,.82+bob,a.z+sr*.4-cr*.09,.07,.14,.07,c[0]*.8,c[1]*.8,c[2]*.8,1,0,0,[c[0]*.8,c[1]*.8,c[2]*.8,1]);
+      this.drawCubeDirect(a.x+cr*.4-sr*.09,.82+bob,a.z+sr*.4+cr*.09,.07,.14,.07,c[0]*.8,c[1]*.8,c[2]*.8,1,0,0,[c[0]*.8,c[1]*.8,c[2]*.8,1]);
+      // tail
+      this.drawCubeDirect(a.x-cr*.38+Math.sin(a.bobT*1.5)*.08,.45+bob,a.z-sr*.38,.1,.1,.1,1,1,1,1,0,0,[.95,.95,.95,1]);
+      // 4 legs
+      for(let li=0;li<4;li++){
+        const lx=(li%2===0?-1:1)*.17,lz=(li<2?-1:1)*.2;
+        const lb=(li%2===0?1:-1)*Math.sin(a.bobT*2.5)*.08;
+        this.drawCubeDirect(
+          a.x+lx*cr-lz*sr,.15+lb+bob,a.z+lx*sr+lz*cr,
+          .11,.28,.11,c[0]*.75,c[1]*.75,c[2]*.75,1,0,0,[c[0]*.75,c[1]*.75,c[2]*.75,1]);
+      }
+    });
+
+    // --- WIN PORTAL ---
+    if(this.collected>=5){
+      gl.disable(gl.CULL_FACE);
+      const spin=ct*80;
+      this.drawCubeDirect(16,1.5,16,2,3,.3,1,1,1,.7,3,1,null);
+      this.drawCubeDirect(16,1.5,16,.3,3,2,1,1,1,.55,3,1,null);
+      gl.enable(gl.CULL_FACE);
+    }
+  }
+
+  // -------------------------------------------------------
+  getFrontCell(){
+    const e=this.cam.eye.elements,fe=this.cam._fwd().elements;
+    return{cx:Math.round(e[0]+fe[0]*1.6),cz:Math.round(e[2]+fe[2]*1.6)};
+  }
+
+  checkCrystals(){
+    const e=this.cam.eye.elements;
+    CRYSTALS.forEach(([cz,cx],idx)=>{
+      if(!this.crystalSet.has(idx))return;
+      if(Math.hypot(e[0]-cx,e[2]-cz)<.95){
+        this.crystalSet.delete(idx);this.collected++;
+        const msgs=[
+          'Crystal 1 of 5! Keep searching the ruins...',
+          'Crystal 2! You feel a strange power building...',
+          'Crystal 3! Halfway there. The walls begin to glow.',
+          'Crystal 4! So close — one more remains!',
+          'ALL 5 CRYSTALS FOUND! Rush to the portal at the center of the fortress! (16, 16)'
+        ];
+        this.showStory(msgs[this.collected-1]);
+      }
+    });
+    if(this.collected>=5&&!this.winShown){
+      const dx=e[0]-16,dz=e[2]-16;
+      if(Math.hypot(dx,dz)<2.5){this.winShown=true;document.getElementById('win').style.display='flex';}
+    }
+  }
+
+  showStory(txt){
+    const el=document.getElementById('story');
+    el.innerHTML=txt;el.style.display='block';
+    clearTimeout(this._stTimer);
+    this._stTimer=setTimeout(()=>el.style.display='none',7000);
+  }
+
+  // -------------------------------------------------------
+  loop(t){
+    // FPS
+    this.fpsFrames++;
+    const now=performance.now();
+    if(now-this.fpsLast>=500){
+      this.fpsVal=Math.round(this.fpsFrames/((now-this.fpsLast)/1000));
+      this.fpsFrames=0;this.fpsLast=now;
+      document.getElementById('fps').textContent=`${this.fpsVal} fps`;
+    }
+
+    const spd=.1;
+    if(this.keys['KeyW']||this.keys['ArrowUp'])   this.cam.moveForward(spd);
+    if(this.keys['KeyS']||this.keys['ArrowDown'])  this.cam.moveBack(spd);
+    if(this.keys['KeyA']||this.keys['ArrowLeft'])  this.cam.moveLeft(spd);
+    if(this.keys['KeyD']||this.keys['ArrowRight']) this.cam.moveRight(spd);
+    if(this.keys['KeyQ']) this.cam.panLeft(2.2);
+    if(this.keys['KeyE']) this.cam.panRight(2.2);
+
+    // lock eye height
+    this.cam.eye.elements[1]=1.7;this.cam.updateView();
+
+    this.animals.forEach(a=>a.update(this.mapData));
+    this.checkCrystals();
+
+    // HUD
+    const e=this.cam.eye.elements;
+    document.getElementById('h-pos').textContent=`pos: (${e[0].toFixed(1)}, ${e[2].toFixed(1)})`;
+    document.getElementById('h-cryst').textContent=`💎 crystals: ${this.collected} / 5`;
+    const{cx,cz}=this.getFrontCell();
+    const bh=(cx>=0&&cx<32&&cz>=0&&cz<32)?this.mapData[cz][cx]:'—';
+    document.getElementById('h-block').textContent=`ahead: h=${bh}  [F=place  G=remove]`;
+    document.getElementById('h-hint').textContent=this.locked?'':'▶ Click canvas to capture mouse';
+
+    this.render(t);
+    requestAnimationFrame(tt=>this.loop(tt));
+  }
+
+  // -------------------------------------------------------
+  setupEvents(){
+    window.addEventListener('keydown',e=>{
+      this.keys[e.code]=true;
+      if(e.code==='KeyF'){const{cx,cz}=this.getFrontCell();if(cx>=0&&cx<32&&cz>=0&&cz<32&&this.mapData[cz][cx]<4)this.mapData[cz][cx]++;}
+      if(e.code==='KeyG'){const{cx,cz}=this.getFrontCell();if(cx>=0&&cx<32&&cz>=0&&cz<32&&this.mapData[cz][cx]>0)this.mapData[cz][cx]--;}
+    });
+    window.addEventListener('keyup',e=>this.keys[e.code]=false);
+    this.canvas.addEventListener('click',()=>this.canvas.requestPointerLock());
+    document.addEventListener('pointerlockchange',()=>this.locked=document.pointerLockElement===this.canvas);
+    document.addEventListener('mousemove',e=>{if(this.locked)this.cam.mouseLook(e.movementX,e.movementY);});
+    window.addEventListener('resize',()=>{
+      this.canvas.width=window.innerWidth;this.canvas.height=window.innerHeight;
+      this.gl.viewport(0,0,this.canvas.width,this.canvas.height);
+      this.cam.updateProj();
+    });
+  }
+}
+
+// =============================================================
+document.getElementById('start-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  window._app=new App();
+  setTimeout(()=>document.getElementById('c').requestPointerLock(),300);
+});
+</script>
+</body>
+</html>
