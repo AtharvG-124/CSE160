@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WebGL Phong Lighting</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a12; color: #e0e0f0; font-family: 'Courier New', monospace; display: flex; height: 100vh; overflow: hidden; }
+  #canvas-container { flex: 1; position: relative; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #controls { width: 280px; background: #0d0d1a; border-left: 1px solid #222244; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  h1 { font-size: 13px; color: #7070ff; letter-spacing: 3px; text-transform: uppercase; border-bottom: 1px solid #222244; padding-bottom: 8px; }
+  .section { background: #111128; border: 1px solid #1a1a3a; border-radius: 4px; padding: 10px; }
+  .section-title { font-size: 10px; color: #5555aa; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  label { font-size: 11px; color: #9090cc; display: flex; justify-content: space-between; margin-bottom: 4px; }
+  input[type=range] { width: 100%; height: 4px; accent-color: #6666ff; margin-bottom: 8px; cursor: pointer; }
+  input[type=color] { width: 40px; height: 24px; border: 1px solid #333366; background: none; cursor: pointer; border-radius: 3px; }
+  .btn { display: block; width: 100%; padding: 7px; font-family: inherit; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; border: 1px solid #333366; background: #0a0a20; color: #8888cc; cursor: pointer; border-radius: 3px; margin-bottom: 4px; transition: all 0.15s; }
+  .btn:hover { background: #1a1a40; color: #aaaaff; border-color: #5555aa; }
+  .btn.on { background: #1a1a50; color: #8888ff; border-color: #5555cc; }
+  .btn.on2 { background: #1a3020; color: #44cc88; border-color: #226644; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row label { flex: 1; margin: 0; }
+  #status { font-size: 10px; color: #444477; margin-top: auto; padding-top: 8px; border-top: 1px solid #111133; }
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <canvas id="glcanvas"></canvas>
+</div>
+<div id="controls">
+  <h1>Phong Lighting</h1>
+
+  <div class="section">
+    <div class="section-title">Toggles</div>
+    <button class="btn on" id="btnLighting" onclick="toggleLighting()">Lighting ON</button>
+    <button class="btn" id="btnNormals" onclick="toggleNormals()">Normal Viz OFF</button>
+    <button class="btn on" id="btnPointLight" onclick="togglePointLight()">Point Light ON</button>
+    <button class="btn on" id="btnSpotLight" onclick="toggleSpotLight()">Spot Light ON</button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Camera</div>
+    <label>Azimuth <span id="vAz">0°</span></label>
+    <input type="range" id="camAz" min="-180" max="180" value="30" oninput="updateCamera()">
+    <label>Elevation <span id="vEl">20°</span></label>
+    <input type="range" id="camEl" min="-85" max="85" value="20" oninput="updateCamera()">
+    <label>Distance <span id="vDist">10</span></label>
+    <input type="range" id="camDist" min="3" max="25" value="10" step="0.1" oninput="updateCamera()">
+  </div>
+
+  <div class="section">
+    <div class="section-title">Point Light</div>
+    <button class="btn on" id="btnAnimate" onclick="toggleAnimate()">Auto-Orbit ON</button>
+    <label>Orbit Angle <span id="vPLAngle">0°</span></label>
+    <input type="range" id="plAngle" min="0" max="360" value="0" oninput="manualAngle()">
+    <label>Height <span id="vPLH">3</span></label>
+    <input type="range" id="plHeight" min="-5" max="8" value="3" step="0.1" oninput="updatePointLight()">
+    <label>Radius <span id="vPLR">5</span></label>
+    <input type="range" id="plRadius" min="1" max="10" value="5" step="0.1" oninput="updatePointLight()">
+    <div class="row">
+      <label>Light Color</label>
+      <input type="color" id="plColor" value="#ffffff" oninput="updateLightColor()">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Spot Light</div>
+    <label>Cutoff Angle <span id="vSLCut">25°</span></label>
+    <input type="range" id="slCutoff" min="5" max="60" value="25" oninput="updateSpotLight()">
+    <label>Direction X <span id="vSLX">0</span></label>
+    <input type="range" id="slDirX" min="-1" max="1" value="0" step="0.05" oninput="updateSpotLight()">
+    <label>Direction Z <span id="vSLZ">-1</span></label>
+    <input type="range" id="slDirZ" min="-1" max="1" value="-1" step="0.05" oninput="updateSpotLight()">
+    <div class="row">
+      <label>Spot Color</label>
+      <input type="color" id="slColor" value="#ffaa44" oninput="updateSpotLightColor()">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Material</div>
+    <label>Specular Power <span id="vSpec">32</span></label>
+    <input type="range" id="specPow" min="1" max="128" value="32" oninput="updateMaterial()">
+    <label>Ambient <span id="vAmb">0.15</span></label>
+    <input type="range" id="ambStr" min="0" max="1" value="0.15" step="0.01" oninput="updateMaterial()">
+  </div>
+
+  <div class="section">
+    <div class="section-title">OBJ Model</div>
+    <input type="file" id="objFile" accept=".obj" style="display:none" onchange="loadOBJ(this)">
+    <button class="btn" onclick="document.getElementById('objFile').click()">Load .OBJ File</button>
+    <div id="objStatus" style="font-size:10px;color:#446644;margin-top:4px;"></div>
+  </div>
+
+  <div id="status">WASD/Arrow keys: camera &nbsp;|&nbsp; WebGL Phong Demo</div>
+</div>
+
+<script>
+// ============================================================
+// SHADERS
+// ============================================================
+const vsSource = `
+attribute vec4 a_Position;
+attribute vec3 a_Normal;
+attribute vec2 a_TexCoord;
+
+uniform mat4 u_ModelMatrix;
+uniform mat4 u_ViewMatrix;
+uniform mat4 u_ProjMatrix;
+uniform mat4 u_NormalMatrix;
+
+varying vec3 v_Normal;
+varying vec3 v_WorldPos;
+varying vec2 v_TexCoord;
+
+void main() {
+  vec4 worldPos = u_ModelMatrix * a_Position;
+  v_WorldPos = worldPos.xyz;
+  v_Normal = normalize((u_NormalMatrix * vec4(a_Normal, 0.0)).xyz);
+  v_TexCoord = a_TexCoord;
+  gl_Position = u_ProjMatrix * u_ViewMatrix * worldPos;
+}
+`;
+
+const fsSource = `
+precision mediump float;
+
+varying vec3 v_Normal;
+varying vec3 v_WorldPos;
+varying vec2 v_TexCoord;
+
+uniform vec3 u_BaseColor;
+uniform vec3 u_CameraPos;
+
+// Point light
+uniform vec3 u_LightPos;
+uniform vec3 u_LightColor;
+uniform bool u_PointLightOn;
+
+// Spot light
+uniform vec3 u_SpotPos;
+uniform vec3 u_SpotDir;
+uniform vec3 u_SpotColor;
+uniform float u_SpotCutoff;
+uniform bool u_SpotLightOn;
+
+// Phong params
+uniform float u_SpecularPower;
+uniform float u_AmbientStrength;
+
+uniform bool u_LightingOn;
+uniform bool u_ShowNormals;
+
+vec3 calcPointLight(vec3 lightPos, vec3 lightColor, vec3 N, vec3 worldPos, vec3 viewDir) {
+  vec3 L = normalize(lightPos - worldPos);
+  float dist = length(lightPos - worldPos);
+  float atten = 1.0 / (1.0 + 0.05*dist + 0.01*dist*dist);
+
+  // Diffuse
+  float diff = max(dot(N, L), 0.0);
+
+  // Specular (Blinn-Phong)
+  vec3 H = normalize(L + viewDir);
+  float spec = pow(max(dot(N, H), 0.0), u_SpecularPower);
+
+  return lightColor * (diff + 0.4*spec) * atten;
+}
+
+vec3 calcSpotLight(vec3 spotPos, vec3 spotDir, vec3 spotColor, float cutoff, vec3 N, vec3 worldPos, vec3 viewDir) {
+  vec3 L = normalize(spotPos - worldPos);
+  float theta = dot(L, normalize(-spotDir));
+  float cutoffCos = cos(radians(cutoff));
+  if (theta <= cutoffCos) return vec3(0.0);
+  float intensity = clamp((theta - cutoffCos) / (1.0 - cutoffCos), 0.0, 1.0);
+  float dist = length(spotPos - worldPos);
+  float atten = 1.0 / (1.0 + 0.03*dist*dist);
+
+  float diff = max(dot(N, L), 0.0);
+  vec3 H = normalize(L + viewDir);
+  float spec = pow(max(dot(N, H), 0.0), u_SpecularPower);
+
+  return spotColor * (diff + 0.3*spec) * intensity * atten;
+}
+
+void main() {
+  vec3 N = normalize(v_Normal);
+
+  if (u_ShowNormals) {
+    gl_FragColor = vec4(N * 0.5 + 0.5, 1.0);
+    return;
+  }
+
+  vec3 color = u_BaseColor;
+
+  if (!u_LightingOn) {
+    gl_FragColor = vec4(color, 1.0);
+    return;
+  }
+
+  vec3 viewDir = normalize(u_CameraPos - v_WorldPos);
+  vec3 ambient = u_AmbientStrength * color;
+  vec3 lighting = ambient;
+
+  if (u_PointLightOn) {
+    lighting += calcPointLight(u_LightPos, u_LightColor, N, v_WorldPos, viewDir) * color;
+  }
+  if (u_SpotLightOn) {
+    lighting += calcSpotLight(u_SpotPos, u_SpotDir, u_SpotColor, u_SpotCutoff, N, v_WorldPos, viewDir) * color;
+  }
+
+  gl_FragColor = vec4(lighting, 1.0);
+}
+`;
+
+// ============================================================
+// STATE
+// ============================================================
+let gl, program;
+let lightingOn = true, showNormals = false, pointLightOn = true, spotLightOn = true;
+let camAz = 30, camEl = 20, camDist = 10;
+let plAngle = 0, plHeight = 3, plRadius = 5;
+let plColor = [1,1,1], slColor = [1,0.67,0.27];
+let specPow = 32, ambStr = 0.15;
+let slCutoff = 25, slDirX = 0, slDirZ = -1;
+let animAngle = 0;
+let animRunning = true;
+
+// Geometry buffers
+let cubeBuffers = null, sphereBuffers = null, groundBuffers = null;
+let lightCubeBuffers = null, spotCubeBuffers = null, wallBuffers = null;
+let objBuffers = null, hasOBJ = false;
+
+// Spotlight position (fixed above scene)
+const SPOT_POS = [0, 8, 0];
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  const canvas = document.getElementById('glcanvas');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  window.addEventListener('resize', () => {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  });
+
+  gl = canvas.getContext('webgl');
+  if (!gl) { alert('WebGL not supported'); return; }
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(0.04, 0.04, 0.1, 1.0);
+
+  program = createProgram(gl, vsSource, fsSource);
+  gl.useProgram(program);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+
+  // Build geometry
+  cubeBuffers     = buildCube(gl);
+  sphereBuffers   = buildSphere(gl, 32, 32);
+  groundBuffers   = buildGround(gl);
+  lightCubeBuffers= buildSmallCube(gl);
+  spotCubeBuffers = buildSmallCube(gl);
+  wallBuffers     = buildCube(gl);
+
+  // Keyboard camera
+  window.addEventListener('keydown', onKey);
+
+  updateCamera();
+  updatePointLight();
+  updateSpotLight();
+  updateLightColor();
+  updateMaterial();
+  render();
+}
+
+// ============================================================
+// RENDER LOOP
+// ============================================================
+function render() {
+  // Animate point light
+  if (animRunning) {
+    animAngle += 0.4;
+    plAngle = animAngle % 360;
+    document.getElementById('plAngle').value = plAngle;
+    document.getElementById('vPLAngle').textContent = Math.round(plAngle) + '°';
+  }
+  const radA = plAngle * Math.PI / 180;
+  const lightPos = [
+    Math.cos(radA) * plRadius,
+    plHeight,
+    Math.sin(radA) * plRadius
+  ];
+
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  setUniforms(lightPos);
+
+  // Ground (grass green)
+  drawObject(groundBuffers, identityMat(), [0.25, 0.45, 0.2]);
+
+  // === HOUSE ===
+  // House body
+  drawObject(cubeBuffers, multiplyMat(translateMat(-3, 1, -3), scaleMat(1.5, 1, 1.5)), [0.75, 0.6, 0.45]);
+  // House roof (flattened cube on top)
+  drawObject(cubeBuffers, multiplyMat(translateMat(-3, 2.6, -3), scaleMat(1.8, 0.5, 1.8)), [0.65, 0.2, 0.15]);
+  // Door
+  drawObject(cubeBuffers, multiplyMat(translateMat(-3, 0.6, -1.48), scaleMat(0.25, 0.6, 0.05)), [0.35, 0.22, 0.1]);
+  // Window left
+  drawObject(cubeBuffers, multiplyMat(translateMat(-4.1, 1.1, -3), scaleMat(0.05, 0.3, 0.3)), [0.6, 0.8, 0.9]);
+  // Window right
+  drawObject(cubeBuffers, multiplyMat(translateMat(-1.9, 1.1, -3), scaleMat(0.05, 0.3, 0.3)), [0.6, 0.8, 0.9]);
+
+  // === TREES ===
+  // Tree 1 trunk
+  drawObject(cubeBuffers, multiplyMat(translateMat(4, 0.8, -4), scaleMat(0.2, 0.8, 0.2)), [0.4, 0.25, 0.1]);
+  // Tree 1 leaves (sphere)
+  drawObject(sphereBuffers, multiplyMat(translateMat(4, 2.3, -4), scaleMat(0.9, 0.9, 0.9)), [0.2, 0.55, 0.15]);
+  // Tree 2
+  drawObject(cubeBuffers, multiplyMat(translateMat(5.5, 0.6, 1), scaleMat(0.2, 0.6, 0.2)), [0.4, 0.25, 0.1]);
+  drawObject(sphereBuffers, multiplyMat(translateMat(5.5, 1.8, 1), scaleMat(0.7, 0.7, 0.7)), [0.15, 0.5, 0.1]);
+  // Tree 3
+  drawObject(cubeBuffers, multiplyMat(translateMat(-5, 0.7, 2), scaleMat(0.2, 0.7, 0.2)), [0.4, 0.25, 0.1]);
+  drawObject(sphereBuffers, multiplyMat(translateMat(-5, 2.1, 2), scaleMat(0.8, 0.8, 0.8)), [0.25, 0.6, 0.1]);
+
+  // === FENCE POSTS ===
+  for (let i = -3; i <= 3; i++) {
+    drawObject(cubeBuffers, multiplyMat(translateMat(i*1.5, 0.5, 7), scaleMat(0.1, 0.5, 0.1)), [0.6, 0.5, 0.35]);
+    drawObject(cubeBuffers, multiplyMat(translateMat(i*1.5, 0.5, -7), scaleMat(0.1, 0.5, 0.1)), [0.6, 0.5, 0.35]);
+  }
+
+  // === DEMO SPHERE (lighting showcase) ===
+  // Sphere 1 (red-orange, center)
+  drawObject(sphereBuffers, translateMat(2, 1, 0), [0.9, 0.35, 0.2]);
+  // Sphere 2 (metallic blue)
+  drawObject(sphereBuffers, translateMat(0, 1, 3), [0.3, 0.5, 0.85]);
+
+  // === WELL ===
+  // Well base ring
+  drawObject(cubeBuffers, multiplyMat(translateMat(3, 0.3, -3), scaleMat(0.7, 0.3, 0.7)), [0.55, 0.5, 0.45]);
+  // Well posts
+  drawObject(cubeBuffers, multiplyMat(translateMat(2.5, 0.9, -2.5), scaleMat(0.1, 0.6, 0.1)), [0.45, 0.32, 0.18]);
+  drawObject(cubeBuffers, multiplyMat(translateMat(3.5, 0.9, -2.5), scaleMat(0.1, 0.6, 0.1)), [0.45, 0.32, 0.18]);
+  // Well crossbar
+  drawObject(cubeBuffers, multiplyMat(translateMat(3, 1.6, -2.5), scaleMat(0.6, 0.08, 0.08)), [0.45, 0.32, 0.18]);
+
+  // OBJ if loaded
+  if (hasOBJ && objBuffers) {
+    const objModel = multiplyMat(translateMat(0, 1, 0), scaleMat(1.5, 1.5, 1.5));
+    drawObject(objBuffers, objModel, [0.8, 0.7, 0.3]);
+  }
+
+  // Light indicator cubes (no lighting)
+  drawLightCube(lightCubeBuffers, lightPos, [1, 1, 0.5]);
+  drawLightCube(spotCubeBuffers, SPOT_POS, [1, 0.6, 0.2]);
+
+  requestAnimationFrame(render);
+}
+
+function setUniforms(lightPos) {
+  const loc = n => gl.getUniformLocation(program, n);
+  gl.uniform1i(loc('u_LightingOn'), lightingOn ? 1 : 0);
+  gl.uniform1i(loc('u_ShowNormals'), showNormals ? 1 : 0);
+  gl.uniform1i(loc('u_PointLightOn'), pointLightOn ? 1 : 0);
+  gl.uniform1i(loc('u_SpotLightOn'), spotLightOn ? 1 : 0);
+  gl.uniform3fv(loc('u_LightPos'), lightPos);
+  gl.uniform3fv(loc('u_LightColor'), plColor);
+  gl.uniform3fv(loc('u_SpotPos'), SPOT_POS);
+  gl.uniform3fv(loc('u_SpotDir'), [slDirX, -1, slDirZ]);
+  gl.uniform3fv(loc('u_SpotColor'), slColor);
+  gl.uniform1f(loc('u_SpotCutoff'), slCutoff);
+  gl.uniform1f(loc('u_SpecularPower'), specPow);
+  gl.uniform1f(loc('u_AmbientStrength'), ambStr);
+  // Camera pos
+  const az = camAz * Math.PI/180, el = camEl * Math.PI/180;
+  const cx = camDist * Math.cos(el) * Math.sin(az);
+  const cy = camDist * Math.sin(el);
+  const cz = camDist * Math.cos(el) * Math.cos(az);
+  gl.uniform3f(loc('u_CameraPos'), cx, cy, cz);
+  // View matrix
+  const viewM = lookAt([cx,cy,cz], [0,0,0], [0,1,0]);
+  gl.uniformMatrix4fv(loc('u_ViewMatrix'), false, viewM);
+  // Proj matrix
+  const projM = perspective(50, gl.canvas.width/gl.canvas.height, 0.1, 100);
+  gl.uniformMatrix4fv(loc('u_ProjMatrix'), false, projM);
+}
+
+function drawObject(buffers, modelMat, color) {
+  const loc = n => gl.getUniformLocation(program, n);
+  gl.uniformMatrix4fv(loc('u_ModelMatrix'), false, modelMat);
+  const normalMat = normalMatrix(modelMat);
+  gl.uniformMatrix4fv(loc('u_NormalMatrix'), false, normalMat);
+  gl.uniform3fv(loc('u_BaseColor'), color);
+
+  const posLoc = gl.getAttribLocation(program, 'a_Position');
+  const norLoc = gl.getAttribLocation(program, 'a_Normal');
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.pos);
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.nor);
+  gl.enableVertexAttribArray(norLoc);
+  gl.vertexAttribPointer(norLoc, 3, gl.FLOAT, false, 0, 0);
+
+  if (buffers.raw) {
+    gl.drawArrays(gl.TRIANGLES, 0, buffers.count);
+  } else {
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.idx);
+    gl.drawElements(gl.TRIANGLES, buffers.count, gl.UNSIGNED_SHORT, 0);
+  }
+}
+
+function drawLightCube(buffers, pos, color) {
+  // Temporarily disable lighting for light indicator
+  const saveLighting = lightingOn;
+  const loc = n => gl.getUniformLocation(program, n);
+  gl.uniform1i(loc('u_LightingOn'), 0);
+  gl.uniform1i(loc('u_ShowNormals'), 0);
+  const m = multiplyMat(translateMat(...pos), scaleMat(0.2, 0.2, 0.2));
+  drawObject(buffers, m, color);
+  gl.uniform1i(loc('u_LightingOn'), lightingOn ? 1 : 0);
+  gl.uniform1i(loc('u_ShowNormals'), showNormals ? 1 : 0);
+}
+
+// ============================================================
+// GEOMETRY BUILDERS
+// ============================================================
+function buildCube(gl) {
+  // 6 faces, each made of 2 triangles, with face normals
+  const faces = [
+    { n: [0,0,1],  verts: [[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]] },
+    { n: [0,0,-1], verts: [[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1]] },
+    { n: [0,1,0],  verts: [[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]] },
+    { n: [0,-1,0], verts: [[-1,-1,1],[1,-1,1],[1,-1,-1],[-1,-1,-1]] },
+    { n: [1,0,0],  verts: [[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1]] },
+    { n: [-1,0,0], verts: [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]] },
+  ];
+  const pos=[], nor=[], idx=[];
+  let base=0;
+  for (const f of faces) {
+    for (const v of f.verts) { pos.push(...v); nor.push(...f.n); }
+    idx.push(base,base+1,base+2, base,base+2,base+3);
+    base+=4;
+  }
+  return uploadBuffers(gl, pos, nor, idx);
+}
+
+function buildSmallCube(gl) { return buildCube(gl); }
+
+function buildSphere(gl, latBands, lonBands) {
+  const pos=[], nor=[], idx=[];
+  for (let lat=0; lat<=latBands; lat++) {
+    const theta = lat * Math.PI / latBands;
+    const st = Math.sin(theta), ct = Math.cos(theta);
+    for (let lon=0; lon<=lonBands; lon++) {
+      const phi = lon * 2 * Math.PI / lonBands;
+      const sp = Math.sin(phi), cp = Math.cos(phi);
+      const x = cp*st, y = ct, z = sp*st;
+      pos.push(x,y,z);
+      nor.push(x,y,z); // unit sphere: normal == position
+    }
+  }
+  for (let lat=0; lat<latBands; lat++) {
+    for (let lon=0; lon<lonBands; lon++) {
+      const a = lat*(lonBands+1)+lon;
+      const b = a+lonBands+1;
+      idx.push(a,b,a+1, b+1,a+1,b);
+    }
+  }
+  return uploadBuffers(gl, pos, nor, idx);
+}
+
+function buildGround(gl) {
+  const s = 10;
+  const pos = [-s,0,-s, s,0,-s, s,0,s, -s,0,s];
+  const nor = [0,1,0, 0,1,0, 0,1,0, 0,1,0];
+  const idx = [0,1,2, 0,2,3];
+  return uploadBuffers(gl, pos, nor, idx);
+}
+
+function uploadBuffers(gl, posArr, norArr, idxArr) {
+  const posBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(posArr), gl.STATIC_DRAW);
+
+  const norBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, norBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norArr), gl.STATIC_DRAW);
+
+  const idxBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idxArr), gl.STATIC_DRAW);
+
+  return { pos: posBuf, nor: norBuf, idx: idxBuf, count: idxArr.length };
+}
+
+// ============================================================
+// OBJ LOADER
+// ============================================================
+function loadOBJ(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      objBuffers = parseOBJ(gl, e.target.result);
+      hasOBJ = true;
+      document.getElementById('objStatus').textContent = '✓ Loaded: ' + file.name + ' (' + (objBuffers.count/3) + ' tris)';
+    } catch(err) {
+      document.getElementById('objStatus').textContent = '✗ Error: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseOBJ(gl, text) {
+  const vPos=[], vNor=[];
+  const outPos=[], outNor=[], outIdx=[];
+  let idx=0;
+
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0]==='v') {
+      vPos.push([parseFloat(parts[1]),parseFloat(parts[2]),parseFloat(parts[3])]);
+    } else if (parts[0]==='vn') {
+      vNor.push([parseFloat(parts[1]),parseFloat(parts[2]),parseFloat(parts[3])]);
+    } else if (parts[0]==='f') {
+      // Triangulate faces
+      const faceVerts = parts.slice(1).map(token => {
+        const t = token.split('/');
+        return { vi: parseInt(t[0])-1, ni: t[2]?parseInt(t[2])-1:-1 };
+      });
+      for (let i=1; i<faceVerts.length-1; i++) {
+        for (const fv of [faceVerts[0], faceVerts[i], faceVerts[i+1]]) {
+          const p = vPos[fv.vi];
+          outPos.push(...p);
+          if (fv.ni>=0 && vNor[fv.ni]) outNor.push(...vNor[fv.ni]);
+          else outNor.push(0,1,0);
+          outIdx.push(idx++);
+        }
+      }
+    }
+  }
+  if (outIdx.length === 0) throw new Error('No geometry found');
+
+  // Normalize OBJ to unit size
+  let maxVal = 0;
+  for (let i=0;i<outPos.length;i++) maxVal=Math.max(maxVal,Math.abs(outPos[i]));
+  for (let i=0;i<outPos.length;i++) outPos[i]/=maxVal;
+
+  // Use 32-bit indices if needed
+  if (outIdx.length > 65535) {
+    const posBuf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(outPos),gl.STATIC_DRAW);
+    const norBuf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,norBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(outNor),gl.STATIC_DRAW);
+    // Render as raw triangles without index buffer for large models
+    return {pos:posBuf,nor:norBuf,idx:null,count:outIdx.length,raw:true};
+  }
+  return uploadBuffers(gl, outPos, outNor, outIdx);
+}
+
+
+
+// ============================================================
+// MATH HELPERS
+// ============================================================
+function identityMat() {
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+}
+function translateMat(x,y,z) {
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]);
+}
+function scaleMat(x,y,z) {
+  return new Float32Array([x,0,0,0, 0,y,0,0, 0,0,z,0, 0,0,0,1]);
+}
+function multiplyMat(a,b) {
+  const out = new Float32Array(16);
+  for (let i=0;i<4;i++) for(let j=0;j<4;j++) {
+    let s=0; for(let k=0;k<4;k++) s+=a[i+k*4]*b[k+j*4];
+    out[i+j*4]=s;
+  }
+  return out;
+}
+function normalMatrix(m) {
+  // Inverse transpose of upper-left 3x3
+  // For simplicity use the model matrix (works for uniform scale)
+  const inv = invertMat4(m);
+  // transpose
+  const t = new Float32Array(16);
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++) t[i*4+j]=inv[j*4+i];
+  return t;
+}
+function invertMat4(m) {
+  const out = new Float32Array(16);
+  const m00=m[0],m01=m[1],m02=m[2],m03=m[3];
+  const m10=m[4],m11=m[5],m12=m[6],m13=m[7];
+  const m20=m[8],m21=m[9],m22=m[10],m23=m[11];
+  const m30=m[12],m31=m[13],m32=m[14],m33=m[15];
+  const b00=m00*m11-m01*m10, b01=m00*m12-m02*m10, b02=m00*m13-m03*m10;
+  const b03=m01*m12-m02*m11, b04=m01*m13-m03*m11, b05=m02*m13-m03*m12;
+  const b06=m20*m31-m21*m30, b07=m20*m32-m22*m30, b08=m20*m33-m23*m30;
+  const b09=m21*m32-m22*m31, b10=m21*m33-m23*m31, b11=m22*m33-m23*m32;
+  const det=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+  if (!det) return identityMat();
+  const id=1/det;
+  out[0]=(m11*b11-m12*b10+m13*b09)*id;
+  out[1]=(m02*b10-m01*b11-m03*b09)*id;
+  out[2]=(m31*b05-m32*b04+m33*b03)*id;
+  out[3]=(m22*b04-m21*b05-m23*b03)*id;
+  out[4]=(m12*b08-m10*b11-m13*b07)*id;
+  out[5]=(m00*b11-m02*b08+m03*b07)*id;
+  out[6]=(m32*b02-m30*b05-m33*b01)*id;
+  out[7]=(m20*b05-m22*b02+m23*b01)*id;
+  out[8]=(m10*b10-m11*b08+m13*b06)*id;
+  out[9]=(m01*b08-m00*b10-m03*b06)*id;
+  out[10]=(m30*b04-m31*b02+m33*b00)*id;
+  out[11]=(m21*b02-m20*b04-m23*b00)*id;
+  out[12]=(m11*b07-m10*b09-m12*b06)*id;
+  out[13]=(m00*b09-m01*b07+m02*b06)*id;
+  out[14]=(m31*b01-m30*b03-m32*b00)*id;
+  out[15]=(m20*b03-m21*b01+m22*b00)*id;
+  return out;
+}
+function lookAt(eye, center, up) {
+  const z = normalize3(sub3(eye, center));
+  const x = normalize3(cross3(up, z));
+  const y = cross3(z, x);
+  return new Float32Array([
+    x[0],y[0],z[0],0,
+    x[1],y[1],z[1],0,
+    x[2],y[2],z[2],0,
+    -dot3(x,eye),-dot3(y,eye),-dot3(z,eye),1
+  ]);
+}
+function perspective(fovDeg, aspect, near, far) {
+  const f = 1/Math.tan(fovDeg*Math.PI/360);
+  const nf = 1/(near-far);
+  return new Float32Array([
+    f/aspect,0,0,0,
+    0,f,0,0,
+    0,0,(far+near)*nf,-1,
+    0,0,2*far*near*nf,0
+  ]);
+}
+function normalize3(v) { const l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); return l?[v[0]/l,v[1]/l,v[2]/l]:[0,0,0]; }
+function sub3(a,b) { return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function cross3(a,b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function dot3(a,b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+
+// ============================================================
+// SHADER HELPERS
+// ============================================================
+function createShader(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+function createProgram(gl, vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, createShader(gl, gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, createShader(gl, gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(p));
+    return null;
+  }
+  return p;
+}
+
+// ============================================================
+// UI HANDLERS
+// ============================================================
+function toggleLighting() {
+  lightingOn = !lightingOn;
+  const b = document.getElementById('btnLighting');
+  b.textContent = lightingOn ? 'Lighting ON' : 'Lighting OFF';
+  b.className = lightingOn ? 'btn on' : 'btn';
+}
+function toggleNormals() {
+  showNormals = !showNormals;
+  const b = document.getElementById('btnNormals');
+  b.textContent = showNormals ? 'Normal Viz ON' : 'Normal Viz OFF';
+  b.className = showNormals ? 'btn on2' : 'btn';
+}
+function togglePointLight() {
+  pointLightOn = !pointLightOn;
+  const b = document.getElementById('btnPointLight');
+  b.textContent = pointLightOn ? 'Point Light ON' : 'Point Light OFF';
+  b.className = pointLightOn ? 'btn on' : 'btn';
+}
+function toggleSpotLight() {
+  spotLightOn = !spotLightOn;
+  const b = document.getElementById('btnSpotLight');
+  b.textContent = spotLightOn ? 'Spot Light ON' : 'Spot Light OFF';
+  b.className = spotLightOn ? 'btn on' : 'btn';
+}
+
+function updateCamera() {
+  camAz = parseFloat(document.getElementById('camAz').value);
+  camEl = parseFloat(document.getElementById('camEl').value);
+  camDist = parseFloat(document.getElementById('camDist').value);
+  document.getElementById('vAz').textContent = camAz + '°';
+  document.getElementById('vEl').textContent = camEl + '°';
+  document.getElementById('vDist').textContent = camDist.toFixed(1);
+}
+function toggleAnimate() {
+  animRunning = !animRunning;
+  const b = document.getElementById('btnAnimate');
+  b.textContent = animRunning ? 'Auto-Orbit ON' : 'Auto-Orbit OFF';
+  b.className = animRunning ? 'btn on' : 'btn';
+}
+function manualAngle() {
+  if (!animRunning) {
+    plAngle = parseFloat(document.getElementById('plAngle').value);
+    animAngle = plAngle;
+    document.getElementById('vPLAngle').textContent = Math.round(plAngle) + '°';
+  }
+  updatePointLight();
+}
+function updatePointLight() {
+  plHeight = parseFloat(document.getElementById('plHeight').value);
+  plRadius = parseFloat(document.getElementById('plRadius').value);
+  document.getElementById('vPLH').textContent = plHeight.toFixed(1);
+  document.getElementById('vPLR').textContent = plRadius.toFixed(1);
+}
+function updateLightColor() {
+  const hex = document.getElementById('plColor').value;
+  plColor = hexToRGB(hex);
+}
+function updateSpotLight() {
+  slCutoff = parseFloat(document.getElementById('slCutoff').value);
+  slDirX = parseFloat(document.getElementById('slDirX').value);
+  slDirZ = parseFloat(document.getElementById('slDirZ').value);
+  document.getElementById('vSLCut').textContent = slCutoff + '°';
+  document.getElementById('vSLX').textContent = slDirX.toFixed(2);
+  document.getElementById('vSLZ').textContent = slDirZ.toFixed(2);
+}
+function updateSpotLightColor() {
+  slColor = hexToRGB(document.getElementById('slColor').value);
+}
+function updateMaterial() {
+  specPow = parseFloat(document.getElementById('specPow').value);
+  ambStr = parseFloat(document.getElementById('ambStr').value);
+  document.getElementById('vSpec').textContent = specPow;
+  document.getElementById('vAmb').textContent = ambStr.toFixed(2);
+}
+
+function hexToRGB(hex) {
+  const r = parseInt(hex.slice(1,3),16)/255;
+  const g = parseInt(hex.slice(3,5),16)/255;
+  const b = parseInt(hex.slice(5,7),16)/255;
+  return [r,g,b];
+}
+
+function onKey(e) {
+  const step = 3;
+  switch(e.key) {
+    case 'ArrowLeft': case 'a': camAz -= step; break;
+    case 'ArrowRight': case 'd': camAz += step; break;
+    case 'ArrowUp': case 'w': camEl = Math.min(85, camEl+step); break;
+    case 'ArrowDown': case 's': camEl = Math.max(-85, camEl-step); break;
+  }
+  document.getElementById('camAz').value = camAz;
+  document.getElementById('camEl').value = camEl;
+  document.getElementById('vAz').textContent = Math.round(camAz) + '°';
+  document.getElementById('vEl').textContent = Math.round(camEl) + '°';
+}
+
+window.onload = init;
+</script>
+</body>
+</html>
