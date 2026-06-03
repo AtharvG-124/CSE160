@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alien Planet — Three.js Scene</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+
+    #ui {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      z-index: 10;
+      color: #7fffb2;
+      text-shadow: 0 0 8px #7fffb2aa;
+      pointer-events: none;
+    }
+    #ui h1 { font-size: 1.15rem; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 4px; }
+    #ui p  { font-size: 0.72rem; opacity: 0.75; letter-spacing: 0.08em; }
+
+    #info {
+      position: fixed;
+      bottom: 18px;
+      left: 18px;
+      z-index: 10;
+      color: #aaffcc;
+      font-size: 0.68rem;
+      opacity: 0.7;
+      pointer-events: none;
+      line-height: 1.6;
+    }
+
+    #wow-note {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 10;
+      background: rgba(0,255,120,0.08);
+      border: 1px solid rgba(0,255,120,0.25);
+      color: #7fffb2;
+      font-size: 0.65rem;
+      padding: 10px 14px;
+      max-width: 240px;
+      line-height: 1.55;
+      border-radius: 4px;
+    }
+    #wow-note strong { display: block; font-size: 0.75rem; margin-bottom: 4px; letter-spacing: 0.1em; }
+
+    #score-panel {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      z-index: 10;
+      color: #ffe07a;
+      text-shadow: 0 0 8px #ffe07a88;
+      font-size: 0.75rem;
+      text-align: right;
+      line-height: 1.7;
+    }
+    #score { font-size: 1.4rem; font-weight: bold; letter-spacing: 0.1em; }
+
+    #crosshair {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      width: 20px; height: 20px;
+      pointer-events: none;
+      z-index: 10;
+      display: none;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(127,255,178,0.8);
+    }
+    #crosshair::before { width: 100%; height: 1px; top: 50%; transform: translateY(-50%); }
+    #crosshair::after  { height: 100%; width: 1px; left: 50%; transform: translateX(-50%); }
+
+    #collect-flash {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(127,255,178,0.15);
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.05s;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>&#x25C6; Alien Planet</h1>
+  <p>Orbit: left drag &nbsp;|&nbsp; Pan: right drag &nbsp;|&nbsp; Zoom: scroll</p>
+</div>
+
+<div id="wow-note">
+  <strong>&#x2605; WOW FEATURE</strong>
+  Collectible crystal mini-game! Click the glowing crystals scattered across the planet to collect them. Each collected crystal increases your score. Crystals pulse, rotate, and hover — try to collect all 12!
+</div>
+
+<div id="info">
+  Three different lights: AmbientLight · DirectionalLight · PointLight · SpotLight<br>
+  20+ primary shapes: spheres, cubes, cylinders, cones, tori, dodecahedra<br>
+  Procedural canvas textures · Skybox cubemap · Orbit camera controls<br>
+  GLTF-style procedural tree model built from primitives
+</div>
+
+<div id="score-panel">
+  CRYSTALS<br>
+  <span id="score">0 / 12</span>
+</div>
+
+<div id="crosshair"></div>
+<div id="collect-flash" id="collect-flash"></div>
+
+<!-- Three.js r158 via CDN -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── WOW FEATURE NOTE ───────────────────────────────────────────────────────
+// Collectible crystal mini-game: 12 pulsing, rotating, hovering crystals are
+// placed around the scene. Click them to collect — score tracked on screen.
+// Uses raycasting for click detection. Crystals animate with sine-wave hover.
+// ────────────────────────────────────────────────────────────────────────────
+
+const W = window.innerWidth, H = window.innerHeight;
+
+// ── Renderer ────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+// ── Scene ────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+
+// ── Camera ───────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 2000);
+camera.position.set(0, 25, 55);
+
+// ── Orbit Controls ───────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 10;
+controls.maxDistance = 200;
+controls.target.set(0, 3, 0);
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEXTURES — procedural canvas textures (no external files needed)
+// ════════════════════════════════════════════════════════════════════════════
+
+function makeCanvasTexture(w, h, fn) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  fn(ctx, w, h);
+  const tex = new THREE.CanvasTexture(canvas);
+  return tex;
+}
+
+// Ground / terrain texture
+const groundTex = makeCanvasTexture(512, 512, (ctx, w, h) => {
+  // dark teal alien ground
+  const g = ctx.createRadialGradient(w/2,h/2,0, w/2,h/2,w/2);
+  g.addColorStop(0,   '#1a4a3a');
+  g.addColorStop(0.6, '#0d2e25');
+  g.addColorStop(1,   '#071a15');
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  // noise dots
+  for (let i = 0; i < 6000; i++) {
+    const x = Math.random()*w, y = Math.random()*h;
+    const r = Math.random()*2;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    const v = Math.floor(Math.random()*60+10);
+    ctx.fillStyle = `rgba(${v},${v+20},${v},0.6)`;
+    ctx.fill();
+  }
+  // hex-like grid lines
+  ctx.strokeStyle = 'rgba(0,255,150,0.06)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 30) {
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+  }
+  for (let y = 0; y < h; y += 30) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  }
+});
+groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+groundTex.repeat.set(8, 8);
+
+// Rock texture
+const rockTex = makeCanvasTexture(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#2a1a3a'; ctx.fillRect(0,0,w,h);
+  for (let i = 0; i < 3000; i++) {
+    const x = Math.random()*w, y = Math.random()*h, r = Math.random()*3+0.5;
+    const v = Math.floor(Math.random()*80+40);
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle = `rgb(${v},${v-20},${v+10})`; ctx.fill();
+  }
+});
+
+// Crystal texture (luminous)
+const crystalTex = makeCanvasTexture(128, 128, (ctx, w, h) => {
+  const g = ctx.createLinearGradient(0,0,w,h);
+  g.addColorStop(0, '#00ffcc');
+  g.addColorStop(0.5, '#ffffff');
+  g.addColorStop(1, '#0088ff');
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillRect(w*0.2, 0, w*0.1, h);
+});
+
+// Wood / bark texture for tree trunk
+const barkTex = makeCanvasTexture(128, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#3d1a00'; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = 'rgba(80,40,0,0.8)'; ctx.lineWidth = 2;
+  for (let y = 0; y < h; y += 8) {
+    ctx.beginPath(); ctx.moveTo(0,y+Math.random()*4);
+    ctx.lineTo(w,y+Math.random()*4); ctx.stroke();
+  }
+});
+
+// Lava / glow texture for volcano
+const lavaTex = makeCanvasTexture(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#1a0000'; ctx.fillRect(0,0,w,h);
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random()*w, y = Math.random()*h;
+    const r = Math.random()*20+5;
+    const g = ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0, `rgba(255,${Math.floor(Math.random()*100+50)},0,0.9)`);
+    g.addColorStop(1, 'rgba(50,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  }
+});
+
+// Sky gradient texture for box faces
+function makeSkyFaceTex(color1, color2) {
+  return makeCanvasTexture(512, 512, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0, color1);
+    g.addColorStop(1, color2);
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+    // stars
+    for (let i = 0; i < 300; i++) {
+      const x = Math.random()*w, y = Math.random()*h;
+      const r = Math.random()*1.5;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.9+0.1})`; ctx.fill();
+    }
+    // nebula blobs
+    for (let i = 0; i < 8; i++) {
+      const nx = Math.random()*w, ny = Math.random()*h;
+      const nr = Math.random()*80+20;
+      const ng = ctx.createRadialGradient(nx,ny,0,nx,ny,nr);
+      const hue = Math.random()*60+200;
+      ng.addColorStop(0, `hsla(${hue},80%,60%,0.15)`);
+      ng.addColorStop(1, 'hsla(0,0%,0%,0)');
+      ctx.fillStyle = ng; ctx.fillRect(0,0,w,h);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SKYBOX — textured box (cubemap-style with 6 canvas textures)
+// ════════════════════════════════════════════════════════════════════════════
+const skyMats = [
+  new THREE.MeshBasicMaterial({ map: makeSkyFaceTex('#080015','#020008'), side: THREE.BackSide }),
+  new THREE.MeshBasicMaterial({ map: makeSkyFaceTex('#060012','#010006'), side: THREE.BackSide }),
+  new THREE.MeshBasicMaterial({ map: makeSkyFaceTex('#02000a','#000005'), side: THREE.BackSide }),
+  new THREE.MeshBasicMaterial({ map: makeSkyFaceTex('#080020','#020010'), side: THREE.BackSide }),
+  new THREE.MeshBasicMaterial({ map: makeSkyFaceTex('#080018','#030012'), side: THREE.BackSide }),
+  new THREE.MeshBasicMaterial({ map: makeSkyFaceTex('#050010','#01000a'), side: THREE.BackSide }),
+];
+const skybox = new THREE.Mesh(new THREE.BoxGeometry(1000,1000,1000), skyMats);
+scene.add(skybox);
+
+// ════════════════════════════════════════════════════════════════════════════
+// LIGHTS — 4 different types
+// ════════════════════════════════════════════════════════════════════════════
+
+// 1. Ambient Light
+const ambientLight = new THREE.AmbientLight(0x112233, 0.6);
+scene.add(ambientLight);
+
+// 2. Directional Light (sun-like, with shadows)
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.4);
+dirLight.position.set(60, 80, 40);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 300;
+dirLight.shadow.camera.left = -80; dirLight.shadow.camera.right = 80;
+dirLight.shadow.camera.top = 80;  dirLight.shadow.camera.bottom = -80;
+scene.add(dirLight);
+
+// 3. Hemisphere Light (sky/ground ambient gradient)
+const hemiLight = new THREE.HemisphereLight(0x330066, 0x001a00, 0.8);
+scene.add(hemiLight);
+
+// 4. Point Light — lava glow (orange)
+const lavaPointLight = new THREE.PointLight(0xff4400, 4, 30);
+lavaPointLight.position.set(0, 8, 0);
+scene.add(lavaPointLight);
+
+// 5. Spot Light — blue beam from above
+const spotLight = new THREE.SpotLight(0x4488ff, 3, 80, Math.PI/8, 0.4, 1.5);
+spotLight.position.set(-20, 50, -20);
+spotLight.castShadow = true;
+spotLight.shadow.mapSize.set(1024, 1024);
+scene.add(spotLight);
+spotLight.target.position.set(-10, 0, -10);
+scene.add(spotLight.target);
+
+// ════════════════════════════════════════════════════════════════════════════
+// GROUND PLANE — textured
+// ════════════════════════════════════════════════════════════════════════════
+const groundGeo = new THREE.CircleGeometry(80, 64);
+const groundMat = new THREE.MeshStandardMaterial({
+  map: groundTex, roughness: 0.95, metalness: 0.05, color: 0x88ffcc
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+function stdMat(color, rough=0.7, metal=0.1) {
+  return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
+}
+function addShadow(m) { m.castShadow = true; m.receiveShadow = true; return m; }
+function place(mesh, x, y, z) { mesh.position.set(x,y,z); return mesh; }
+
+// ════════════════════════════════════════════════════════════════════════════
+// PRIMARY SHAPES (20+)
+// ════════════════════════════════════════════════════════════════════════════
+
+const animatedObjects = []; // for rotation/hover animations
+
+// ── 1. Central Volcano (Cone + Cylinder stack) ─────────────────────────────
+// Shape 1: cone
+const volcanoGeo = new THREE.ConeGeometry(8, 18, 16);
+const volcanoMat = new THREE.MeshStandardMaterial({ map: rockTex, roughness:1, color:0x553344 });
+const volcano = addShadow(new THREE.Mesh(volcanoGeo, volcanoMat));
+volcano.position.set(0, 9, 0);
+scene.add(volcano);
+
+// Shape 2: cylinder (volcano base)
+const vBaseGeo = new THREE.CylinderGeometry(9.5, 11, 5, 16);
+const vBase = addShadow(new THREE.Mesh(vBaseGeo, stdMat(0x442233, 0.9)));
+vBase.position.set(0, 2.5, 0);
+scene.add(vBase);
+
+// Shape 3: Lava sphere at crater
+const lavaSphereGeo = new THREE.SphereGeometry(2.5, 16, 16);
+const lavaSphereMat = new THREE.MeshStandardMaterial({
+  map: lavaTex, emissive: 0xff2200, emissiveIntensity: 1.2, roughness: 0.3
+});
+const lavaSphere = new THREE.Mesh(lavaSphereGeo, lavaSphereMat);
+lavaSphere.position.set(0, 19, 0);
+scene.add(lavaSphere);
+animatedObjects.push({ mesh: lavaSphere, type: 'rotate', speed: 0.3 });
+
+// ── 2. Crystal Formations (Tetrahedra / Octahedra) ─────────────────────────
+const crystalMat = new THREE.MeshStandardMaterial({
+  map: crystalTex, transparent: true, opacity: 0.85,
+  roughness: 0.05, metalness: 0.8,
+  emissive: 0x00ffaa, emissiveIntensity: 0.3
+});
+
+// Shapes 4-6: three crystal clusters
+const crystalPositions = [
+  [20, 0, 15], [-25, 0, 10], [15, 0, -22]
+];
+crystalPositions.forEach(([x,_y,z], i) => {
+  const sizes = [2.5, 1.8, 3.2];
+  const geo = new THREE.OctahedronGeometry(sizes[i], 0);
+  const m = addShadow(new THREE.Mesh(geo, crystalMat.clone()));
+  m.position.set(x, sizes[i], z);
+  m.rotation.y = i * 1.2;
+  scene.add(m);
+  animatedObjects.push({ mesh: m, type: 'rotate', speed: 0.5 + i*0.1 });
+});
+
+// ── 3. Alien Trees (cylinder trunk + sphere canopy + cone spire) ────────────
+// This acts as our "procedural 3D model" — built from primitives like a GLTF
+// model's geometry, with bark texture applied.
+function makeAlienTree(x, z, scale=1) {
+  const group = new THREE.Group();
+
+  // trunk — Shape 7, 8, 9 (3 trees = 3 trunk cylinders)
+  const trunkGeo = new THREE.CylinderGeometry(0.4*scale, 0.6*scale, 4*scale, 8);
+  const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness:0.9, color:0x442200 });
+  const trunk = addShadow(new THREE.Mesh(trunkGeo, trunkMat));
+  trunk.position.y = 2*scale;
+  group.add(trunk);
+
+  // canopy sphere
+  const canopyGeo = new THREE.SphereGeometry(2*scale, 10, 10);
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: 0x00cc55, roughness:0.8, metalness:0.0,
+    emissive: 0x004422, emissiveIntensity: 0.3
+  });
+  const canopy = addShadow(new THREE.Mesh(canopyGeo, canopyMat));
+  canopy.position.y = (4 + 2*scale) * scale + 0.5;
+  group.add(canopy);
+
+  // spire cone on top
+  const spireGeo = new THREE.ConeGeometry(0.5*scale, 2*scale, 6);
+  const spireMat = new THREE.MeshStandardMaterial({ color:0x00ff88, emissive:0x002211, metalness:0.3 });
+  const spire = addShadow(new THREE.Mesh(spireGeo, spireMat));
+  spire.position.y = (4 + 4*scale) * scale + 0.5;
+  group.add(spire);
+
+  group.position.set(x, 0, z);
+  scene.add(group);
+  animatedObjects.push({ mesh: canopy, type: 'bob', phase: Math.random()*Math.PI*2, speed: 0.8 });
+  return group;
+}
+makeAlienTree(30, 5, 1.0);
+makeAlienTree(-30, -8, 1.2);
+makeAlienTree(18, -30, 0.85);
+makeAlienTree(-18, 28, 1.1);
+
+// ── 4. Floating Rock Islands (boxes + spheres) ──────────────────────────────
+// Shapes 10-13: floating cubes/boxes
+const rockPositions = [
+  [35, 15, -25], [-40, 20, -10], [10, 22, 35], [-15, 18, -35]
+];
+rockPositions.forEach(([x,y,z], i) => {
+  const w = 4+Math.random()*3, h = 2+Math.random()*2, d = 3+Math.random()*3;
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshStandardMaterial({ map: rockTex, color:0x776688, roughness:0.95 });
+  const m = addShadow(new THREE.Mesh(geo, mat));
+  m.position.set(x, y, z);
+  m.rotation.set(Math.random()*0.3, Math.random()*Math.PI, Math.random()*0.3);
+  scene.add(m);
+  animatedObjects.push({ mesh: m, type: 'float', phase: i*1.1, speed: 0.4+i*0.1 });
+});
+
+// ── 5. Alien Pillars (tall cylinders) ──────────────────────────────────────
+// Shapes 14-16: cylinders
+const pillarData = [
+  [25, 0, 0, 1.2, 8, 0x445566],
+  [-22, 0, 22, 1.0, 10, 0x334455],
+  [0, 0, -28, 0.9, 7, 0x556677],
+];
+pillarData.forEach(([x,y,z,r,h,col]) => {
+  const geo = new THREE.CylinderGeometry(r, r*1.3, h, 12);
+  const m = addShadow(new THREE.Mesh(geo, stdMat(col, 0.8, 0.3)));
+  m.position.set(x, h/2, z);
+  scene.add(m);
+});
+
+// ── 6. Torus rings (planet decoration) ─────────────────────────────────────
+// Shapes 17-18: tori
+[[22, 12, -18], [-28, 16, 5]].forEach(([x,y,z], i) => {
+  const geo = new THREE.TorusGeometry(3+i, 0.5, 12, 36);
+  const mat = new THREE.MeshStandardMaterial({
+    color: [0x00ccff, 0xff6600][i], roughness:0.2, metalness:0.8,
+    emissive: [0x003344, 0x331100][i], emissiveIntensity: 0.4
+  });
+  const m = addShadow(new THREE.Mesh(geo, mat));
+  m.position.set(x, y, z);
+  m.rotation.x = Math.PI/3;
+  scene.add(m);
+  animatedObjects.push({ mesh: m, type: 'spin', axis:'y', speed: (0.4+i*0.2)*(i%2?-1:1) });
+});
+
+// ── 7. Dodecahedron (ancient relic) ────────────────────────────────────────
+// Shape 19
+const dodGeo = new THREE.DodecahedronGeometry(3.5, 0);
+const dodMat = new THREE.MeshStandardMaterial({
+  color: 0xffcc00, roughness:0.1, metalness:0.9,
+  emissive:0x442200, emissiveIntensity:0.5
+});
+const dodeca = addShadow(new THREE.Mesh(dodGeo, dodMat));
+dodeca.position.set(-8, 5, -12);
+scene.add(dodeca);
+animatedObjects.push({ mesh: dodeca, type: 'rotate', speed: 0.6 });
+
+// ── 8. Icosahedron ──────────────────────────────────────────────────────────
+// Shape 20
+const icoGeo = new THREE.IcosahedronGeometry(2.5, 0);
+const icoMat = new THREE.MeshStandardMaterial({
+  color:0xff3388, roughness:0.15, metalness:0.7,
+  emissive:0x440011, emissiveIntensity:0.4
+});
+const icosa = addShadow(new THREE.Mesh(icoGeo, icoMat));
+icosa.position.set(12, 4, -8);
+scene.add(icosa);
+animatedObjects.push({ mesh: icosa, type: 'rotate', speed: -0.5 });
+
+// ── 9. Sphere cluster (alien eggs) ─────────────────────────────────────────
+// Shapes 21-25
+const eggColors = [0xcc44ff, 0xff44cc, 0x44ccff, 0xffcc44, 0x44ffcc];
+for (let i = 0; i < 5; i++) {
+  const ang = (i/5)*Math.PI*2;
+  const r = 14;
+  const geo = new THREE.SphereGeometry(1.2+Math.random()*0.5, 14, 14);
+  const mat = new THREE.MeshStandardMaterial({
+    color: eggColors[i], roughness:0.3, metalness:0.5,
+    emissive: eggColors[i], emissiveIntensity: 0.15
+  });
+  const m = addShadow(new THREE.Mesh(geo, mat));
+  m.position.set(Math.cos(ang)*r, 1.5, Math.sin(ang)*r);
+  scene.add(m);
+  animatedObjects.push({ mesh: m, type: 'bob', phase: i*1.26, speed: 1+i*0.15 });
+}
+
+// ── 10. Arch / torusknot (bonus shape) ─────────────────────────────────────
+// Shape 26
+const knotGeo = new THREE.TorusKnotGeometry(4, 0.7, 80, 14, 2, 3);
+const knotMat = new THREE.MeshStandardMaterial({
+  color:0x22ddff, roughness:0.1, metalness:0.9,
+  emissive:0x005566, emissiveIntensity:0.5
+});
+const knot = addShadow(new THREE.Mesh(knotGeo, knotMat));
+knot.position.set(-35, 12, -30);
+scene.add(knot);
+animatedObjects.push({ mesh: knot, type: 'rotate', speed: 0.35 });
+
+// ── 11. Ground rocks (spheres + boxes scattered) ────────────────────────────
+// Shapes 27-36
+for (let i = 0; i < 10; i++) {
+  const ang = Math.random()*Math.PI*2, rad = 20+Math.random()*40;
+  const x = Math.cos(ang)*rad, z = Math.sin(ang)*rad;
+  const useBox = Math.random() > 0.5;
+  const s = 0.5+Math.random()*1.5;
+  const geo = useBox
+    ? new THREE.BoxGeometry(s, s*0.7, s)
+    : new THREE.SphereGeometry(s*0.6, 8, 6);
+  const m = addShadow(new THREE.Mesh(geo, stdMat(0x5a3060+i*0x050205, 0.95)));
+  m.position.set(x, s*0.35, z);
+  m.rotation.y = Math.random()*Math.PI;
+  scene.add(m);
+}
+
+// ── 12. Small orbiting moon (sphere) ───────────────────────────────────────
+// Shape 37
+const moonGeo = new THREE.SphereGeometry(3.5, 20, 20);
+const moonMat = new THREE.MeshStandardMaterial({
+  map: rockTex, roughness:0.9, color:0xaaaacc, metalness:0.1
+});
+const moon = addShadow(new THREE.Mesh(moonGeo, moonMat));
+moon.position.set(50, 30, 0);
+scene.add(moon);
+// moon orbits via animation loop
+
+// ════════════════════════════════════════════════════════════════════════════
+// WOW FEATURE: COLLECTIBLE CRYSTALS
+// ════════════════════════════════════════════════════════════════════════════
+const collectibles = [];
+const NUM_CRYSTALS = 12;
+let score = 0;
+const scoreEl = document.getElementById('score');
+const flash = document.getElementById('collect-flash');
+
+const collectMat = new THREE.MeshStandardMaterial({
+  color: 0x00ffdd, transparent: true, opacity: 0.9,
+  roughness: 0.05, metalness: 0.5,
+  emissive: 0x00ffdd, emissiveIntensity: 0.7,
+  map: crystalTex
+});
+
+for (let i = 0; i < NUM_CRYSTALS; i++) {
+  const ang = (i / NUM_CRYSTALS) * Math.PI * 2 + Math.random() * 0.5;
+  const rad = 12 + Math.random() * 35;
+  const x = Math.cos(ang) * rad;
+  const z = Math.sin(ang) * rad;
+
+  // Each collectible is a small octahedron + glow ring
+  const geo = new THREE.OctahedronGeometry(0.9, 0);
+  const mat = collectMat.clone();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, 2, z);
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  // glow ring around it
+  const ringGeo = new THREE.TorusGeometry(1.6, 0.07, 8, 32);
+  const ringMat = new THREE.MeshBasicMaterial({ color:0x00ffdd, transparent:true, opacity:0.5 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI/2;
+  mesh.add(ring);
+
+  // point light per crystal (subtle)
+  const pLight = new THREE.PointLight(0x00ffdd, 0.8, 6);
+  mesh.add(pLight);
+
+  collectibles.push({
+    mesh, ring, baseY: 2, phase: i * (Math.PI * 2 / NUM_CRYSTALS), collected: false
+  });
+}
+
+// ── Raycaster for crystal clicking ─────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener('click', (e) => {
+  mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const meshes = collectibles.filter(c => !c.collected).map(c => c.mesh);
+  const hits = raycaster.intersectObjects(meshes, true);
+  if (hits.length > 0) {
+    // find which collectible was hit
+    const hitMesh = hits[0].object.isMesh ? hits[0].object : hits[0].object.parent;
+    const cIdx = collectibles.findIndex(c => c.mesh === hitMesh || c.mesh === hits[0].object);
+    if (cIdx !== -1 && !collectibles[cIdx].collected) {
+      collectibles[cIdx].collected = true;
+      scene.remove(collectibles[cIdx].mesh);
+      score++;
+      scoreEl.textContent = `${score} / ${NUM_CRYSTALS}`;
+      // flash effect
+      flash.style.opacity = '1';
+      setTimeout(() => { flash.style.opacity = '0'; }, 120);
+    }
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ════════════════════════════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  const dt = clock.getDelta ? 0.016 : 0.016;
+
+  // Generic animated objects
+  animatedObjects.forEach(obj => {
+    switch (obj.type) {
+      case 'rotate':
+        obj.mesh.rotation.y += obj.speed * 0.01;
+        obj.mesh.rotation.x += obj.speed * 0.005;
+        break;
+      case 'spin':
+        obj.mesh.rotation[obj.axis || 'y'] += obj.speed * 0.01;
+        break;
+      case 'bob':
+        obj.mesh.position.y += Math.sin(t * obj.speed + obj.phase) * 0.003;
+        break;
+      case 'float':
+        obj.mesh.position.y += Math.sin(t * obj.speed + obj.phase) * 0.005;
+        break;
+    }
+  });
+
+  // Lava sphere pulse
+  lavaSphere.material.emissiveIntensity = 0.8 + Math.sin(t*2) * 0.4;
+  lavaPointLight.intensity = 3 + Math.sin(t*3) * 1.5;
+
+  // Moon orbit
+  moon.position.x = Math.cos(t * 0.15) * 55;
+  moon.position.z = Math.sin(t * 0.15) * 55;
+  moon.position.y = 25 + Math.sin(t * 0.3) * 5;
+  moon.rotation.y += 0.004;
+
+  // Knot rotation
+  knot.rotation.x = t * 0.2;
+  knot.rotation.z = t * 0.15;
+
+  // Collectible crystals pulse & hover
+  collectibles.forEach(c => {
+    if (c.collected) return;
+    c.mesh.position.y = c.baseY + Math.sin(t * 1.5 + c.phase) * 0.5;
+    c.mesh.rotation.y += 0.025;
+    c.ring.rotation.z += 0.03;
+    const pulse = 0.5 + Math.sin(t * 3 + c.phase) * 0.3;
+    c.mesh.material.emissiveIntensity = pulse;
+  });
+
+  // Spot light slow sweep
+  spotLight.target.position.x = Math.cos(t * 0.2) * 20 - 10;
+  spotLight.target.position.z = Math.sin(t * 0.2) * 20 - 10;
+  spotLight.target.updateMatrixWorld();
+
+  // Skybox follows camera
+  skybox.position.copy(camera.position);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+</script>
+
+</body>
+</html>
